@@ -1,0 +1,50 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/* Custom scrollbar styling for markdown editor */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-accent-muted) var(--md-primary-bg);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--md-primary-bg);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--md-accent-muted);
+  border-radius: 4px;
+  border: 2px solid var(--md-primary-bg);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--md-highlight);
+}
+
+/* Selection color */
+::selection {
+  background-color: rgba(246, 177, 122, 0.3);
+  color: var(--md-text-primary);
+}
+
+::-moz-selection {
+  background-color: rgba(246, 177, 122, 0.3);
+  color: var(--md-text-primary);
+}
+
+/* Smooth transitions */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+button, a {
+  transition-property: all;
+}
