@@ -3,9 +3,6 @@ import {
   Eye,
   EyeOff,
   Columns2,
-  Download,
-  Settings,
-  Sparkles,
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -111,29 +108,8 @@ export function Toolbar({
         </button>
       </div>
 
-      {/* Right Section */}
+      {/* Right Section Removed */}
       <div className="flex items-center gap-2">
-        <button
-          className="p-2 rounded-lg hover:bg-[#2D3250] transition-colors"
-          style={{ color: 'var(--md-text-secondary)' }}
-          title="AI Assistant"
-        >
-          <Sparkles className="w-5 h-5" />
-        </button>
-        <button
-          className="p-2 rounded-lg hover:bg-[#2D3250] transition-colors"
-          style={{ color: 'var(--md-text-secondary)' }}
-          title="Export"
-        >
-          <Download className="w-5 h-5" />
-        </button>
-        <button
-          className="p-2 rounded-lg hover:bg-[#2D3250] transition-colors"
-          style={{ color: 'var(--md-text-secondary)' }}
-          title="Settings"
-        >
-          <Settings className="w-5 h-5" />
-        </button>
       </div>
     </div>
   );
