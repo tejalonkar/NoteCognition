@@ -2,11 +2,11 @@ import { useState, useRef } from 'react';
 import { Sidebar, Note } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { EditorArea, type EditorAreaRef } from './components/EditorArea';
-import { MarkdownPreview } from './components/MarkdownPreview';
-import { CommandPalette, CommandItem } from './components/CommandPalette';
 import { EmptyState } from './components/EmptyState';
 import { StatusBar } from './components/StatusBar';
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+
+
+
 
 // Sample initial notes
 const sampleNotes: Note[] = [
@@ -39,19 +39,12 @@ A minimalist, modern markdown editor inspired by Notion with a soft dark theme.
 
 - **Clean Interface**: Distraction-free writing experience
 - **Live Preview**: See your formatted content in real-time
-- **Command Palette**: Quick access to formatting options with \`/\`
+- **Live Preview**: See your formatted content in real-time
 - **Syntax Highlighting**: Beautiful code and text highlighting
 
-## How to Use
-
-Type \`/\` anywhere to open the command palette and quickly insert:
-- Headings (H1-H3)
-- Lists (bullet and numbered)
-- Code blocks
-- Quotes
-- Dividers
 
 ### Markdown Basics
+
 
 Use **bold** and *italic* text for emphasis. Create [links](https://example.com) easily.
 
@@ -105,12 +98,8 @@ def hello_world():
     print("Hello, World!")
 \`\`\`
 
-## Editor Features
-
-### Command Palette
-Press \`/\` to open the command palette for quick formatting.
-
 ### View Modes
+
 - **Editor**: Focus on writing
 - **Split**: Write and preview simultaneously
 - **Preview**: See the final result
@@ -172,8 +161,8 @@ export default function App() {
   const [currentNoteId, setCurrentNoteId] = useState<string | null>('1');
   const [noteContents, setNoteContents] = useState<Record<string, string>>(sampleContent);
   const [viewMode, setViewMode] = useState<'editor' | 'preview' | 'split'>('editor');
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const editorRef = useRef<EditorAreaRef>(null);
+
 
   const currentNote = notes.find((n) => n.id === currentNoteId);
   const currentContent = currentNoteId ? noteContents[currentNoteId] || '' : '';
@@ -241,19 +230,7 @@ export default function App() {
     }
   };
 
-  const handleCommandSelect = (command: CommandItem) => {
-    if (!currentNoteId) return;
 
-    if (editorRef.current) {
-        editorRef.current.insertCommand(command.action);
-    }
-
-    setIsCommandPaletteOpen(false);
-  };
-
-  const handleSlashCommand = () => {
-    setIsCommandPaletteOpen(true);
-  };
 
   return (
     <div
@@ -285,53 +262,20 @@ export default function App() {
             <EmptyState onNewNote={handleNewNote} />
           ) : (
             <div className="flex-1 h-full overflow-hidden">
-              {viewMode === 'split' ? (
-                <PanelGroup direction="horizontal">
-                  <Panel defaultSize={50} minSize={20}>
-                    <div className="h-full w-full overflow-hidden">
-                      <div className="h-full max-w-4xl mx-auto px-8">
-                        <EditorArea
-                          ref={editorRef}
-                          content={currentContent}
-                          onChange={handleContentChange}
-                          onSlashCommand={handleSlashCommand}
-                        />
-                      </div>
-                    </div>
-                  </Panel>
-                  <PanelResizeHandle className="w-1 bg-transparent hover:bg-[#424769] transition-colors cursor-col-resize active:bg-[var(--md-highlight)] flex flex-col justify-center items-center">
-                    <div className="h-8 w-1 rounded-full bg-[var(--md-border)]" />
-                  </PanelResizeHandle>
-                  <Panel defaultSize={50} minSize={20}>
-                    <div className="h-full w-full border-l" style={{ borderColor: 'var(--md-border)' }}>
-                      <MarkdownPreview content={currentContent} />
-                    </div>
-                  </Panel>
-                </PanelGroup>
-              ) : viewMode === 'editor' ? (
-                <div className="h-full max-w-4xl mx-auto px-8">
-                  <EditorArea
-                    ref={editorRef}
-                    content={currentContent}
-                    onChange={handleContentChange}
-                    onSlashCommand={handleSlashCommand}
-                  />
-                </div>
-              ) : (
-                <div className="h-full w-full">
-                  <MarkdownPreview content={currentContent} />
-                </div>
-              )}
+              <EditorArea
+                ref={editorRef}
+                content={currentContent}
+                onChange={handleContentChange}
+                viewMode={viewMode}
+
+              />
             </div>
+
           )}
         </div>
       </div>
 
-      <CommandPalette
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        onSelect={handleCommandSelect}
-      />
+
       <StatusBar wordCount={wordCount} charCount={charCount} lastSaved={currentNote?.updatedAt} />
     </div>
   );

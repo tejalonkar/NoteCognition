@@ -41,16 +41,8 @@ export function StatusBar({ wordCount, charCount, lastSaved }: StatusBarProps) {
             <span>Saved at {formatTime(lastSaved)}</span>
           </div>
         )}
-        <div className="flex items-center gap-2">
-          <kbd
-            className="px-1.5 py-0.5 rounded text-xs"
-            style={{ backgroundColor: 'var(--md-primary-bg)' }}
-          >
-            /
-          </kbd>
-          <span>for commands</span>
-        </div>
       </div>
     </div>
+
   );
 }
