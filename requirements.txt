@@ -1,0 +1,17 @@
+# Project Requirements for NoteCognition
+
+## Core Dependencies
+- React (UI Framework)
+- Vite (Build Tool)
+- TailwindCSS (Styling)
+- Dexie.js (Database)
+- dexie-react-hooks (Dexie React Integration)
+- dexie-cloud-addon (Dexie Cloud Sync Support)
+- Lucide React (Icons)
+- Framer Motion (Animations)
+- Editor.md (Markdown Editor)
+- Markdoc (Markdown Parser)
+
+## Development Requirements
+- Node.js (v18+)
+- npm (v9+)

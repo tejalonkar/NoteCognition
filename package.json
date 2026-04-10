@@ -1,5 +1,5 @@
 {
-  "name": "@figma/my-make-file",
+  "name": "NoteCognition",
   "private": true,
   "version": "0.0.1",
   "type": "module",
@@ -45,6 +45,9 @@
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
     "date-fns": "3.6.0",
+    "dexie": "^4.4.2",
+    "dexie-cloud-addon": "^4.4.8",
+    "dexie-react-hooks": "^4.4.0",
     "editor.md": "^1.5.0",
     "embla-carousel-react": "8.6.0",
     "input-otp": "1.4.2",

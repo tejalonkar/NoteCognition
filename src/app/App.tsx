@@ -1,86 +1,69 @@
 import { useState, useRef } from 'react';
-import { Sidebar, Note } from './components/Sidebar';
+import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { EditorArea, type EditorAreaRef } from './components/EditorArea';
 import { EmptyState } from './components/EmptyState';
 import { StatusBar } from './components/StatusBar';
+import { db, type Note } from './db';
+import { useLiveQuery } from 'dexie-react-hooks';
 
 
 
-
-// Sample initial notes
-const sampleNotes: Note[] = [];
-
-const sampleContent: Record<string, string> = {};
 
 export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [notes, setNotes] = useState<Note[]>(sampleNotes);
+  const notes = useLiveQuery(() => db.notes.reverse().toArray()) || [];
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
-  const [noteContents, setNoteContents] = useState<Record<string, string>>(sampleContent);
   const [viewMode, setViewMode] = useState<'editor' | 'preview' | 'split'>('editor');
   const editorRef = useRef<EditorAreaRef>(null);
 
-
   const currentNote = notes.find((n) => n.id === currentNoteId);
-  const currentContent = currentNoteId ? noteContents[currentNoteId] || '' : '';
+  const currentContent = currentNote?.content || '';
   
   // Calculate word and character counts
   const wordCount = currentContent.trim() ? currentContent.trim().split(/\s+/).length : 0;
   const charCount = currentContent.length;
 
-  const handleContentChange = (newContent: string) => {
+  const handleContentChange = async (newContent: string) => {
     if (!currentNoteId) return;
 
-    setNoteContents((prev) => ({
-      ...prev,
-      [currentNoteId]: newContent,
-    }));
-
-    // Update note preview
+    // Update note preview and title from content
     const firstLine = newContent.split('\n')[0].replace(/^#+ /, '').trim();
     const preview = newContent.split('\n').slice(1, 3).join(' ').slice(0, 100);
 
-    setNotes((prev) =>
-      prev.map((note) =>
-        note.id === currentNoteId
-          ? { ...note, title: firstLine || 'Untitled', preview: preview || 'No content', updatedAt: new Date() }
-          : note
-      )
-    );
+    await db.notes.update(currentNoteId, {
+      content: newContent,
+      title: firstLine || 'Untitled',
+      preview: preview || 'No content',
+      updatedAt: new Date(),
+    });
   };
 
-  const handleTitleChange = (newTitle: string) => {
+  const handleTitleChange = async (newTitle: string) => {
     if (!currentNoteId) return;
 
-    setNotes((prev) =>
-      prev.map((note) => (note.id === currentNoteId ? { ...note, title: newTitle } : note))
-    );
+    await db.notes.update(currentNoteId, {
+      title: newTitle,
+      updatedAt: new Date(),
+    });
   };
 
-  const handleNewNote = () => {
+  const handleNewNote = async () => {
+    const id = Date.now().toString();
     const newNote: Note = {
-      id: Date.now().toString(),
+      id,
       title: 'Untitled',
       preview: 'New document',
+      content: '# Untitled\n\nStart writing...',
       updatedAt: new Date(),
     };
 
-    setNotes((prev) => [newNote, ...prev]);
-    setNoteContents((prev) => ({
-      ...prev,
-      [newNote.id]: '# Untitled\n\nStart writing...',
-    }));
-    setCurrentNoteId(newNote.id);
+    await db.notes.add(newNote);
+    setCurrentNoteId(id);
   };
 
-  const handleDeleteNote = (id: string) => {
-    setNotes((prev) => prev.filter((note) => note.id !== id));
-    setNoteContents((prev) => {
-      const newContents = { ...prev };
-      delete newContents[id];
-      return newContents;
-    });
+  const handleDeleteNote = async (id: string) => {
+    await db.notes.delete(id);
 
     if (currentNoteId === id) {
       const remainingNotes = notes.filter((note) => note.id !== id);

@@ -1,12 +1,6 @@
 import { FileText, ChevronLeft, Plus, Search, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-export interface Note {
-  id: string;
-  title: string;
-  preview: string;
-  updatedAt: Date;
-}
+import { type Note } from '../db';
 
 interface SidebarProps {
   isOpen: boolean;
