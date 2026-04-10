@@ -24,7 +24,6 @@ export const EditorArea = memo(forwardRef<EditorAreaRef, EditorAreaProps>(
     const editorInstance = useRef<any>(null);
     const contentRef = useRef(content);
     const isInternalChange = useRef(false);
-    const onChangeTimeoutRef = useRef<any>(null);
 
     useImperativeHandle(ref, () => ({
       insertCommand: (action: string) => {
@@ -84,17 +83,13 @@ export const EditorArea = memo(forwardRef<EditorAreaRef, EditorAreaProps>(
 
             if (currentVal !== contentRef.current) {
                contentRef.current = currentVal;
+               isInternalChange.current = true;
+               onChange(currentVal);
                
-               // Debounce the callback to React to prevent re-render loops and lag
-               if (onChangeTimeoutRef.current) clearTimeout(onChangeTimeoutRef.current);
-               onChangeTimeoutRef.current = setTimeout(() => {
-                   isInternalChange.current = true;
-                   onChange(currentVal);
-                   // Reset the flag after React has likely finished its render cycle
-                   setTimeout(() => {
-                     isInternalChange.current = false;
-                   }, 200);
-               }, 300);
+               // Short timeout just to clear the flag after React's sync tick
+               setTimeout(() => {
+                 isInternalChange.current = false;
+               }, 100);
             }
           }
         });
@@ -104,7 +99,6 @@ export const EditorArea = memo(forwardRef<EditorAreaRef, EditorAreaProps>(
 
       return () => {
         clearTimeout(timer);
-        if (onChangeTimeoutRef.current) clearTimeout(onChangeTimeoutRef.current);
         if (editorInstance.current) {
           const container = document.getElementById(editorId);
           if (container) container.innerHTML = "";

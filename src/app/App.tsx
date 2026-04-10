@@ -12,7 +12,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 
 export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const notes = useLiveQuery(() => db.notes.reverse().toArray()) || [];
+  // Sort by updatedAt so newest notes are at the top
+  const notes = useLiveQuery(() => db.notes.orderBy('updatedAt').reverse().toArray()) || [];
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'editor' | 'preview' | 'split'>('editor');
   const editorRef = useRef<EditorAreaRef>(null);
@@ -31,37 +32,62 @@ export default function App() {
     }
   }, [currentNoteId]); // Only reset when currentNoteId changes, to allow typing without being overwritten
 
+  // Ref to hold the current content for immediate saving on switch
+  const currentContentRef = useRef<string>(localContent);
+  useEffect(() => { currentContentRef.current = localContent; }, [localContent]);
+
+  const savePendingChanges = async (id: string, content: string) => {
+    if (!id || !content) return;
+    const firstNewline = content.indexOf('\n');
+    const firstLine = (firstNewline === -1 ? content : content.substring(0, firstNewline)).replace(/^#+ /, '').trim();
+    const secondNewline = content.indexOf('\n', firstNewline + 1);
+    const thirdNewline = content.indexOf('\n', secondNewline + 1);
+    const previewEnd = thirdNewline === -1 ? (secondNewline === -1 ? content.length : secondNewline) : thirdNewline;
+    const previewText = content.substring(firstNewline + 1, previewEnd).replace(/\n/g, ' ').trim();
+    
+    await db.notes.update(id, {
+        content: content,
+        title: firstLine || 'Untitled',
+        preview: previewText.slice(0, 50) || 'No content',
+        updatedAt: new Date(),
+    });
+  };
+
   // Debounced database update
   const saveTimeoutRef = useRef<any>(null);
 
   const handleContentChange = useCallback((newContent: string) => {
     if (!currentNoteId) return;
 
-    // Update local state immediately for fast feedback (StatusBar etc)
     setLocalContent(newContent);
 
-    if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+    saveTimeoutRef.current = setTimeout(() => {
+        savePendingChanges(currentNoteId, newContent);
+    }, 200); // Very fast saving: 200ms
+  }, [currentNoteId]);
+
+  // Flush on switch
+  const handleSelectNote = async (id: string) => {
+    if (currentNoteId && currentNoteId !== id) {
+        if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
+            await savePendingChanges(currentNoteId, currentContentRef.current);
+        }
     }
+    setCurrentNoteId(id);
+  };
 
-    saveTimeoutRef.current = setTimeout(async () => {
-        // High-performance line extraction (no split)
-        const firstNewline = newContent.indexOf('\n');
-        const firstLine = (firstNewline === -1 ? newContent : newContent.substring(0, firstNewline)).replace(/^#+ /, '').trim();
-        
-        const secondNewline = newContent.indexOf('\n', firstNewline + 1);
-        const thirdNewline = newContent.indexOf('\n', secondNewline + 1);
-        const previewEnd = thirdNewline === -1 ? (secondNewline === -1 ? newContent.length : secondNewline) : thirdNewline;
-        const previewText = newContent.substring(firstNewline + 1, previewEnd).replace(/\n/g, ' ').trim();
-        const preview = previewText.slice(0, 50);
-
-        await db.notes.update(currentNoteId, {
-            content: newContent,
-            title: firstLine || 'Untitled',
-            preview: preview || 'No content',
-            updatedAt: new Date(),
-        });
-    }, 1000); // 1-second debounce for DB saving
+  // Flush on window close/refresh
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+        if (currentNoteId && saveTimeoutRef.current) {
+            savePendingChanges(currentNoteId, currentContentRef.current);
+        }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [currentNoteId]);
 
   // Optimized counts: limit word count for massive documents to prevent hangs
@@ -122,7 +148,7 @@ export default function App() {
           onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
           notes={notes}
           currentNoteId={currentNoteId}
-          onSelectNote={setCurrentNoteId}
+          onSelectNote={handleSelectNote}
           onNewNote={handleNewNote}
           onDeleteNote={handleDeleteNote}
         />
