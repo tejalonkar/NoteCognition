@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { EditorArea, type EditorAreaRef } from './components/EditorArea';
@@ -18,26 +18,55 @@ export default function App() {
   const editorRef = useRef<EditorAreaRef>(null);
 
   const currentNote = notes.find((n) => n.id === currentNoteId);
-  const currentContent = currentNote?.content || '';
   
-  // Calculate word and character counts
-  const wordCount = currentContent.trim() ? currentContent.trim().split(/\s+/).length : 0;
-  const charCount = currentContent.length;
+  // Local state for the editor content to avoid frequent DB-driven re-renders during typing
+  const [localContent, setLocalContent] = useState<string>('');
+  
+  // Update local content when note changes
+  useEffect(() => {
+    if (currentNote) {
+      setLocalContent(currentNote.content);
+    } else {
+      setLocalContent('');
+    }
+  }, [currentNoteId]); // Only reset when currentNoteId changes, to allow typing without being overwritten
 
-  const handleContentChange = async (newContent: string) => {
+  // Debounced database update
+  const saveTimeoutRef = useRef<any>(null);
+
+  const handleContentChange = useCallback((newContent: string) => {
     if (!currentNoteId) return;
 
-    // Update note preview and title from content
-    const firstLine = newContent.split('\n')[0].replace(/^#+ /, '').trim();
-    const preview = newContent.split('\n').slice(1, 3).join(' ').slice(0, 100);
+    // Update local state immediately for fast feedback (StatusBar etc)
+    setLocalContent(newContent);
 
-    await db.notes.update(currentNoteId, {
-      content: newContent,
-      title: firstLine || 'Untitled',
-      preview: preview || 'No content',
-      updatedAt: new Date(),
-    });
-  };
+    if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+        // High-performance line extraction (no split)
+        const firstNewline = newContent.indexOf('\n');
+        const firstLine = (firstNewline === -1 ? newContent : newContent.substring(0, firstNewline)).replace(/^#+ /, '').trim();
+        
+        const secondNewline = newContent.indexOf('\n', firstNewline + 1);
+        const thirdNewline = newContent.indexOf('\n', secondNewline + 1);
+        const previewEnd = thirdNewline === -1 ? (secondNewline === -1 ? newContent.length : secondNewline) : thirdNewline;
+        const previewText = newContent.substring(firstNewline + 1, previewEnd).replace(/\n/g, ' ').trim();
+        const preview = previewText.slice(0, 50);
+
+        await db.notes.update(currentNoteId, {
+            content: newContent,
+            title: firstLine || 'Untitled',
+            preview: preview || 'No content',
+            updatedAt: new Date(),
+        });
+    }, 1000); // 1-second debounce for DB saving
+  }, [currentNoteId]);
+
+  // Optimized counts: limit word count for massive documents to prevent hangs
+  const charCount = localContent.length;
+  const wordCount = charCount < 100000 && localContent.trim() ? localContent.trim().split(/\s+/).length : (charCount >= 100000 ? -1 : 0);
 
   const handleTitleChange = async (newTitle: string) => {
     if (!currentNoteId) return;
@@ -105,7 +134,7 @@ export default function App() {
             <div className="flex-1 h-full overflow-hidden">
               <EditorArea
                 ref={editorRef}
-                content={currentContent}
+                content={currentNote?.content || ''}
                 onChange={handleContentChange}
                 viewMode={viewMode}
 
@@ -117,7 +146,11 @@ export default function App() {
       </div>
 
 
-      <StatusBar wordCount={wordCount} charCount={charCount} lastSaved={currentNote?.updatedAt} />
+      <StatusBar 
+        wordCount={wordCount === -1 ? 'Many' : wordCount} 
+        charCount={charCount} 
+        lastSaved={currentNote?.updatedAt} 
+      />
     </div>
   );
 }

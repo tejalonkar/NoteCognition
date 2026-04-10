@@ -1,4 +1,4 @@
-import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useRef, forwardRef, useImperativeHandle, memo } from 'react';
 
 declare global {
   interface Window {
@@ -18,12 +18,13 @@ interface EditorAreaProps {
   viewMode?: 'editor' | 'preview' | 'split';
 }
 
-export const EditorArea = forwardRef<EditorAreaRef, EditorAreaProps>(
+export const EditorArea = memo(forwardRef<EditorAreaRef, EditorAreaProps>(
   ({ content, onChange, viewMode = 'editor' }, ref) => {
     const editorId = 'editormd-container';
     const editorInstance = useRef<any>(null);
     const contentRef = useRef(content);
     const isInternalChange = useRef(false);
+    const onChangeTimeoutRef = useRef<any>(null);
 
     useImperativeHandle(ref, () => ({
       insertCommand: (action: string) => {
@@ -49,7 +50,7 @@ export const EditorArea = forwardRef<EditorAreaRef, EditorAreaProps>(
           theme: "dark",
           previewTheme: "dark",
           editorTheme: "pastel-on-dark",
-          markdown: content,
+          markdown: contentRef.current,
           codeFold: true,
           language: "en",
           saveHTMLToTextarea: true,
@@ -58,9 +59,9 @@ export const EditorArea = forwardRef<EditorAreaRef, EditorAreaProps>(
           emoji: true,
           taskList: true,
           tocm: true,
-          tex: true,
-          flowChart: true,
-          sequenceDiagram: true,
+          tex: false, 
+          flowChart: false, 
+          sequenceDiagram: false, 
           imageUpload: true,
           imageFormats: ["jpg", "jpeg", "gif", "png", "bmp", "webp"],
           imageUploadURL: "./php/upload.php",
@@ -75,27 +76,36 @@ export const EditorArea = forwardRef<EditorAreaRef, EditorAreaProps>(
           },
           onchange: function() {
             const currentVal = this.getMarkdown();
+
+            // Safety: Disallow preview/watch for huge docs to prevent crash
+            if (currentVal.length > 500000 && this.settings.watch) {
+                this.unwatch();
+            }
+
             if (currentVal !== contentRef.current) {
-               isInternalChange.current = true;
                contentRef.current = currentVal;
-               onChange(currentVal);
                
-               setTimeout(() => {
-                 isInternalChange.current = false;
-               }, 0);
+               // Debounce the callback to React to prevent re-render loops and lag
+               if (onChangeTimeoutRef.current) clearTimeout(onChangeTimeoutRef.current);
+               onChangeTimeoutRef.current = setTimeout(() => {
+                   isInternalChange.current = true;
+                   onChange(currentVal);
+                   // Reset the flag after React has likely finished its render cycle
+                   setTimeout(() => {
+                     isInternalChange.current = false;
+                   }, 200);
+               }, 300);
             }
           }
         });
       };
 
-
-      // Delay slightly to ensure jQuery and editormd are ready if loaded via script tags
       const timer = setTimeout(initEditor, 500);
 
       return () => {
         clearTimeout(timer);
+        if (onChangeTimeoutRef.current) clearTimeout(onChangeTimeoutRef.current);
         if (editorInstance.current) {
-          // editor.md doesn't have a clean destroy but we can remove the container content
           const container = document.getElementById(editorId);
           if (container) container.innerHTML = "";
         }
@@ -115,7 +125,7 @@ export const EditorArea = forwardRef<EditorAreaRef, EditorAreaProps>(
       }
     }, [viewMode]);
 
-    // Update content when prop changes from outside
+    // Update content when prop changes from outside (e.g. note switch)
     useEffect(() => {
       if (editorInstance.current && editorInstance.current.state?.loaded && content !== contentRef.current) {
         if (!isInternalChange.current) {
@@ -156,7 +166,6 @@ export const EditorArea = forwardRef<EditorAreaRef, EditorAreaProps>(
                 color: var(--md-text-primary) !important;
                 padding: 40px !important;
             }
-            /* Dark theme overrides for Markdown preview */
             .editormd-preview-container h1, .editormd-preview-container h2, .editormd-preview-container h3 {
                 border-bottom-color: var(--md-border) !important;
                 color: var(--md-highlight) !important;
@@ -165,7 +174,6 @@ export const EditorArea = forwardRef<EditorAreaRef, EditorAreaProps>(
                 color: var(--md-text-secondary) !important;
                 border-left-color: var(--md-highlight) !important;
             }
-            /* Scrollbar */
             .editormd-preview::-webkit-scrollbar,
             .CodeMirror-vscrollbar::-webkit-scrollbar {
                 width: 8px;
@@ -180,4 +188,4 @@ export const EditorArea = forwardRef<EditorAreaRef, EditorAreaProps>(
       </div>
     );
   }
-);
+));

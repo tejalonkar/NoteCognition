@@ -1,7 +1,7 @@
 import { Clock, FileText, Type } from 'lucide-react';
 
 interface StatusBarProps {
-  wordCount: number;
+  wordCount: number | string;
   charCount: number;
   lastSaved?: Date;
 }
