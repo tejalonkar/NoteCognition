@@ -1,4 +1,5 @@
 import {
+  Download,
   Menu,
   Eye,
   EyeOff,
@@ -12,6 +13,7 @@ interface ToolbarProps {
   onViewModeChange: (mode: 'editor' | 'preview' | 'split') => void;
   currentNoteTitle: string;
   onTitleChange: (title: string) => void;
+  onExport: () => void;
 }
 
 export function Toolbar({
@@ -21,6 +23,7 @@ export function Toolbar({
   onViewModeChange,
   currentNoteTitle,
   onTitleChange,
+  onExport,
 }: ToolbarProps) {
   return (
     <div
@@ -108,8 +111,20 @@ export function Toolbar({
         </button>
       </div>
 
-      {/* Right Section Removed */}
+      {/* Right Section - Actions */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={onExport}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-medium hover:bg-[#2D3250]"
+          style={{ 
+            color: 'var(--md-text-secondary)',
+            border: '1px solid var(--md-border)' 
+          }}
+          title="Export as Markdown (.md)"
+        >
+          <Download className="w-4 h-4" />
+          <span>Export</span>
+        </button>
       </div>
     </div>
   );

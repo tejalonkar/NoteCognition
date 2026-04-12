@@ -11,6 +11,8 @@
 - Framer Motion (Animations)
 - Editor.md (Markdown Editor)
 - Markdoc (Markdown Parser)
+- amazon-cognito-identity-js (User Authentication)
+- @aws-sdk (AWS Service Integration)
 
 ## Development Requirements
 - Node.js (v18+)

@@ -6,6 +6,7 @@ dist/
 
 # environment variables
 .env
+*.local
 
 # logs
 npm-debug.log*
@@ -17,3 +18,9 @@ yarn-error.log*
 
 # IDE
 .vscode/
+
+# AWS Deployment Scripts (Sensitive)
+deploy.ps1
+destroy.ps1
+get-outputs.ps1
+cloudformation/transformed-template.yaml

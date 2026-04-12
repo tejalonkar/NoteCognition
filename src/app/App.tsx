@@ -6,6 +6,9 @@ import { EmptyState } from './components/EmptyState';
 import { StatusBar } from './components/StatusBar';
 import { db, type Note } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { AuthModal } from './components/AuthModal';
+import { authService } from './services/AuthService';
+import { syncService } from './services/SyncService';
 
 
 
@@ -16,7 +19,33 @@ export default function App() {
   const notes = useLiveQuery(() => db.notes.orderBy('updatedAt').reverse().toArray()) || [];
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'editor' | 'preview' | 'split'>('editor');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const editorRef = useRef<EditorAreaRef>(null);
+
+  // Check authentication on mount
+  useEffect(() => {
+    authService.getSession()
+      .then((session) => {
+        setIsAuthenticated(true);
+        // Initialize Sync Service with the real API and Token
+        syncService.configure({
+          apiUrl: import.meta.env.VITE_API_URL || '',
+          idToken: session.getIdToken().getJwtToken()
+        });
+        syncService.startAutoSync();
+      })
+      .catch(() => {
+        setIsAuthenticated(false);
+        setIsAuthModalOpen(true);
+      });
+  }, []);
+
+  const handleAuthSuccess = () => {
+    setIsAuthenticated(true);
+    setIsAuthModalOpen(false);
+    window.location.reload(); 
+  };
 
   const currentNote = notes.find((n) => n.id === currentNoteId);
   
@@ -127,6 +156,25 @@ export default function App() {
   };
 
 
+  const handleExportNote = () => {
+    if (!currentNote) return;
+    
+    // Use the latest local content for the export
+    const content = localContent || currentNote.content;
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    
+    // Clean filename: remove restricted characters
+    const safeTitle = (currentNote.title || 'Untitled').replace(/[/\\?%*:|"<>]/g, '-');
+    
+    a.href = url;
+    a.download = `${safeTitle}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div
@@ -140,6 +188,7 @@ export default function App() {
         onViewModeChange={setViewMode}
         currentNoteTitle={currentNote?.title || ''}
         onTitleChange={handleTitleChange}
+        onExport={handleExportNote}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -176,6 +225,11 @@ export default function App() {
         wordCount={wordCount === -1 ? 'Many' : wordCount} 
         charCount={charCount} 
         lastSaved={currentNote?.updatedAt} 
+      />
+
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onSuccess={handleAuthSuccess} 
       />
     </div>
   );
