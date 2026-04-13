@@ -6,9 +6,8 @@ import { EmptyState } from './components/EmptyState';
 import { StatusBar } from './components/StatusBar';
 import { db, type Note } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AuthModal } from './components/AuthModal';
-import { authService } from './services/AuthService';
-import { syncService } from './services/SyncService';
+
+
 
 
 
@@ -19,33 +18,7 @@ export default function App() {
   const notes = useLiveQuery(() => db.notes.orderBy('updatedAt').reverse().toArray()) || [];
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'editor' | 'preview' | 'split'>('editor');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const editorRef = useRef<EditorAreaRef>(null);
-
-  // Check authentication on mount
-  useEffect(() => {
-    authService.getSession()
-      .then((session) => {
-        setIsAuthenticated(true);
-        // Initialize Sync Service with the real API and Token
-        syncService.configure({
-          apiUrl: import.meta.env.VITE_API_URL || '',
-          idToken: session.getIdToken().getJwtToken()
-        });
-        syncService.startAutoSync();
-      })
-      .catch(() => {
-        setIsAuthenticated(false);
-        setIsAuthModalOpen(true);
-      });
-  }, []);
-
-  const handleAuthSuccess = () => {
-    setIsAuthenticated(true);
-    setIsAuthModalOpen(false);
-    window.location.reload(); 
-  };
 
   const currentNote = notes.find((n) => n.id === currentNoteId);
   
@@ -226,11 +199,6 @@ export default function App() {
         charCount={charCount} 
         lastSaved={currentNote?.updatedAt} 
       />
-
-      <AuthModal 
-        isOpen={isAuthModalOpen} 
-        onSuccess={handleAuthSuccess} 
-      />
     </div>
   );
-}
+}
