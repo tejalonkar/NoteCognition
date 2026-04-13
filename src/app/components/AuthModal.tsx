@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { authService } from '../services/AuthService';
-import { Mail, Lock, LogIn, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, LogIn, ChevronRight } from 'lucide-react';
+
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -9,10 +10,8 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
-  const [mode, setMode] = useState<'login' | 'signup' | 'confirm'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,16 +21,8 @@ export function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
     setError(null);
 
     try {
-      if (mode === 'login') {
-        await authService.signIn(email, password);
-        onSuccess();
-      } else if (mode === 'signup') {
-        await authService.signUp(email, password);
-        setMode('confirm');
-      } else if (mode === 'confirm') {
-        await authService.confirmSignUp(email, code);
-        setMode('login');
-      }
+      await authService.signIn(email, password);
+      onSuccess();
     } catch (err: any) {
       setError(err.message || 'An error occurred');
     } finally {
@@ -62,53 +53,36 @@ export function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
               <LogIn className="text-white w-8 h-8" />
             </div>
             <h2 className="text-2xl font-bold tracking-tight text-white mb-2">
-              {mode === 'login' ? 'Welcome Back' : mode === 'signup' ? 'Create Account' : 'Verify Email'}
+              Welcome Back
             </h2>
             <p className="text-sm text-gray-400">
-              {mode === 'login' ? 'Continue to NoteCognition' : 'Join our developer community today'}
+              Continue to NoteCognition
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {mode !== 'confirm' && (
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input
-                  type="email"
-                  placeholder="Email Address"
-                  className="w-full bg-black/20 border border-white/5 rounded-xl py-3 pl-10 pr-4 text-white outline-none focus:border-indigo-500/50 transition-all"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-            )}
-            {mode !== 'confirm' && (
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input
-                  type="password"
-                  placeholder="Password"
-                  className="w-full bg-black/20 border border-white/5 rounded-xl py-3 pl-10 pr-4 text-white outline-none focus:border-indigo-500/50 transition-all"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-            )}
-            {mode === 'confirm' && (
-              <div className="relative">
-                <CheckCircle2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input
-                  type="text"
-                  placeholder="Verification Code"
-                  className="w-full bg-black/20 border border-white/5 rounded-xl py-3 pl-10 pr-4 text-white outline-none focus:border-indigo-500/50 transition-all"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  required
-                />
-              </div>
-            )}
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input
+                type="email"
+                placeholder="Email Address"
+                className="w-full bg-black/20 border border-white/5 rounded-xl py-3 pl-10 pr-4 text-white outline-none focus:border-indigo-500/50 transition-all"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input
+                type="password"
+                placeholder="Password"
+                className="w-full bg-black/20 border border-white/5 rounded-xl py-3 pl-10 pr-4 text-white outline-none focus:border-indigo-500/50 transition-all"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
             {error && <p className="text-red-400 text-xs px-1">{error}</p>}
             <button
               type="submit"
@@ -117,28 +91,15 @@ export function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
             >
               {loading ? 'Processing...' : (
                 <>
-                  {mode === 'login' ? 'Sign In' : mode === 'signup' ? 'Get Started' : 'Confirm Account'}
+                  Sign In
                   <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </>
               )}
             </button>
           </form>
-
-          <div className="mt-8 pt-6 border-t border-white/5 text-center">
-            {mode === 'login' ? (
-              <p className="text-sm text-gray-400">
-                Don't have an account?{' '}
-                <button onClick={() => setMode('signup')} className="text-indigo-400 font-medium">Create one</button>
-              </p>
-            ) : (
-              <p className="text-sm text-gray-400">
-                Already have an account?{' '}
-                <button onClick={() => setMode('login')} className="text-indigo-400 font-medium">Back to login</button>
-              </p>
-            )}
-          </div>
         </div>
       </motion.div>
     </div>
   );
 }
+
