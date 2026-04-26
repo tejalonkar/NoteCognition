@@ -105,6 +105,63 @@ Resources:
             Method: ANY
             RestApiId: !Ref NoteCognitionApi
 
+  WebSocketHandlerLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../backend/websocket/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref NoteCognitionTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NoteCognitionTable
+      Events:
+        ConnectEvent:
+          Type: WebSocket
+          Properties:
+            ApiId: !Ref NoteCognitionWebSocketApi
+            RouteKey: '$connect'
+        DisconnectEvent:
+          Type: WebSocket
+          Properties:
+            ApiId: !Ref NoteCognitionWebSocketApi
+            RouteKey: '$disconnect'
+
+  StreamProcessorLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../backend/stream-processor/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref NoteCognitionTable
+          WEBSOCKET_API_ENDPOINT: !Sub "https://${NoteCognitionWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NoteCognitionTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - 'execute-api:ManageConnections'
+              Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${NoteCognitionWebSocketApi}/${Environment}/*"
+      Events:
+        NoteStream:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt NoteCognitionTable.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 1
+
+  NoteCognitionWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${ProjectName}-websocket-${Environment}"
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+
   NoteCognitionApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -125,3 +182,6 @@ Outputs:
     Value: !Ref NoteCognitionUserPoolClient
   S3BucketName:
     Value: !Ref NoteCognitionAssetsBucket
+  WebSocketUrl:
+    Description: WebSocket URL for real-time updates
+    Value: !Sub "wss://${NoteCognitionWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/"

@@ -2,15 +2,59 @@ import { db } from '../db';
 
 interface SyncConfig {
   apiUrl: string;
-  idToken: string; 
+  wsUrl: string;
+  idToken: string;
+  userId: string;
 }
 
 export class SyncService {
   private config: SyncConfig | null = null;
   private isSyncing = false;
+  private ws: WebSocket | null = null;
 
   configure(config: SyncConfig) {
     this.config = config;
+    this.connectWebSocket();
+  }
+
+  private connectWebSocket() {
+    if (!this.config || this.ws) return;
+
+    const url = `${this.config.wsUrl}?userId=${this.config.userId}`;
+    this.ws = new WebSocket(url);
+
+    this.ws.onopen = () => {
+      console.log('[Sync] WebSocket Connected');
+    };
+
+    this.ws.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'NOTE_UPDATED') {
+          console.log(`[Sync] Real-time update received for note: ${data.payload.id}`);
+          
+          await db.notes.put({
+            id: data.payload.id,
+            title: data.payload.title,
+            content: data.payload.content,
+            preview: data.payload.preview,
+            updatedAt: new Date(data.payload.updatedAt)
+          });
+        }
+      } catch (err) {
+        console.error('[Sync] Failed to process WebSocket message:', err);
+      }
+    };
+
+    this.ws.onclose = () => {
+      console.log('[Sync] WebSocket Closed. Reconnecting in 5s...');
+      this.ws = null;
+      setTimeout(() => this.connectWebSocket(), 5000);
+    };
+
+    this.ws.onerror = (err) => {
+      console.error('[Sync] WebSocket Error:', err);
+    };
   }
 
   /**
