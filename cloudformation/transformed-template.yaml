@@ -1,0 +1,215 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: NoteCognition Cloud Backend Stack
+Parameters:
+  ProjectName:
+    Type: String
+    Default: notecognition
+  Environment:
+    Type: String
+    Default: dev
+Resources:
+  NoteCognitionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Sub: ${ProjectName}-data-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: PK
+        AttributeType: S
+      - AttributeName: SK
+        AttributeType: S
+      - AttributeName: GSI1PK
+        AttributeType: S
+      - AttributeName: GSI1SK
+        AttributeType: S
+      KeySchema:
+      - AttributeName: PK
+        KeyType: HASH
+      - AttributeName: SK
+        KeyType: RANGE
+      GlobalSecondaryIndexes:
+      - IndexName: GSI1
+        KeySchema:
+        - AttributeName: GSI1PK
+          KeyType: HASH
+        - AttributeName: GSI1SK
+          KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+  NoteCognitionAssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Fn::Sub: ${ProjectName}-assets-${Environment}-${AWS::AccountId}
+      CorsConfiguration:
+        CorsRules:
+        - AllowedHeaders:
+          - '*'
+          AllowedMethods:
+          - GET
+          - PUT
+          - POST
+          - DELETE
+          AllowedOrigins:
+          - '*'
+          ExposedHeaders:
+          - ETag
+          MaxAge: 3000
+  NoteCognitionUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName:
+        Fn::Sub: ${ProjectName}-user-pool-${Environment}
+      UsernameAttributes:
+      - email
+      AutoVerifiedAttributes:
+      - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+      Schema:
+      - Name: email
+        AttributeDataType: String
+        Required: true
+        Mutable: true
+  NoteCognitionUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName:
+        Fn::Sub: ${ProjectName}-client
+      UserPoolId:
+        Ref: NoteCognitionUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+      - ALLOW_USER_PASSWORD_AUTH
+      - ALLOW_REFRESH_TOKEN_AUTH
+      - ALLOW_USER_SRP_AUTH
+  SyncServiceLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${ProjectName}-sync-service-${Environment}
+      CodeUri: s3://notecognition-bootstrap-940920597951-us-east-1/d2714cc3439e48eadd731cfbab32910b
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: NoteCognitionTable
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: NoteCognitionTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            RestApiId:
+              Ref: NoteCognitionApi
+  WebSocketHandlerLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://notecognition-bootstrap-940920597951-us-east-1/f09f141431960f59409313e1e0fac2ab
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: NoteCognitionTable
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: NoteCognitionTable
+      Events:
+        ConnectEvent:
+          Type: WebSocket
+          Properties:
+            ApiId:
+              Ref: NoteCognitionWebSocketApi
+            RouteKey: $connect
+        DisconnectEvent:
+          Type: WebSocket
+          Properties:
+            ApiId:
+              Ref: NoteCognitionWebSocketApi
+            RouteKey: $disconnect
+  StreamProcessorLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://notecognition-bootstrap-940920597951-us-east-1/656b91417cf5ce60a24d3719b5d47093
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: NoteCognitionTable
+          WEBSOCKET_API_ENDPOINT:
+            Fn::Sub: https://${NoteCognitionWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: NoteCognitionTable
+      - Statement:
+        - Effect: Allow
+          Action:
+          - execute-api:ManageConnections
+          Resource:
+            Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${NoteCognitionWebSocketApi}/${Environment}/*
+      Events:
+        NoteStream:
+          Type: DynamoDB
+          Properties:
+            Stream:
+              Fn::GetAtt:
+              - NoteCognitionTable
+              - StreamArn
+            StartingPosition: LATEST
+            BatchSize: 1
+  NoteCognitionWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name:
+        Fn::Sub: ${ProjectName}-websocket-${Environment}
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+  NoteCognitionApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName:
+        Ref: Environment
+      Auth:
+        DefaultAuthorizer: MyCognitoAuthorizer
+        Authorizers:
+          MyCognitoAuthorizer:
+            UserPoolArn:
+              Fn::GetAtt:
+              - NoteCognitionUserPool
+              - Arn
+Outputs:
+  ApiUrl:
+    Description: Base URL of the Sync API
+    Value:
+      Fn::Sub: https://${NoteCognitionApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/
+  UserPoolId:
+    Value:
+      Ref: NoteCognitionUserPool
+  UserPoolClientId:
+    Value:
+      Ref: NoteCognitionUserPoolClient
+  S3BucketName:
+    Value:
+      Ref: NoteCognitionAssetsBucket
+  WebSocketUrl:
+    Description: WebSocket URL for real-time updates
+    Value:
+      Fn::Sub: wss://${NoteCognitionWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/
