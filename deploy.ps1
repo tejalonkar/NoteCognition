@@ -49,7 +49,28 @@ aws cloudformation deploy `
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "`n--- DEPLOYMENT SUCCESSFUL ---" -ForegroundColor Green
-    Write-Host "Run 'aws cloudformation describe-stacks --stack-name notecognition-stack-dev --query ""Stacks[0].Outputs""' to see your new IDs." -ForegroundColor Cyan
+    Write-Host "Fetching stack outputs and generating frontend .env..." -ForegroundColor Yellow
+
+    $outputs = aws cloudformation describe-stacks `
+        --stack-name notecognition-stack-dev `
+        --query "Stacks[0].Outputs" `
+        --output json `
+        --region $region | ConvertFrom-Json
+
+    $apiUrl = ($outputs | Where-Object { $_.OutputKey -eq "ApiUrl" }).OutputValue
+    $webSocketUrl = ($outputs | Where-Object { $_.OutputKey -eq "WebSocketUrl" }).OutputValue
+    $userPoolId = ($outputs | Where-Object { $_.OutputKey -eq "UserPoolId" }).OutputValue
+    $userPoolClientId = ($outputs | Where-Object { $_.OutputKey -eq "UserPoolClientId" }).OutputValue
+
+    @"
+VITE_API_URL=$apiUrl
+VITE_WS_URL=$webSocketUrl
+VITE_USER_POOL_ID=$userPoolId
+VITE_USER_POOL_CLIENT_ID=$userPoolClientId
+VITE_REGION=$region
+"@ | Out-File -FilePath (Join-Path $PSScriptRoot ".env") -Encoding utf8
+
+    Write-Host ".env generated successfully." -ForegroundColor Green
 } else {
     Write-Host "`nDeployment failed. Check the AWS CloudFormation Console for details." -ForegroundColor Red
 }

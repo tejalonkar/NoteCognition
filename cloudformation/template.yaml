@@ -46,6 +46,11 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "${ProjectName}-assets-${Environment}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ['*']
@@ -53,6 +58,19 @@ Resources:
             AllowedOrigins: ['*']
             ExposedHeaders: [ETag]
             MaxAge: 3000
+
+  NoteCognitionAssetsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref NoteCognitionAssetsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadUploadedAssets
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub "${NoteCognitionAssetsBucket.Arn}/uploads/*"
 
   NoteCognitionUserPool:
     Type: AWS::Cognito::UserPool
@@ -94,9 +112,12 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref NoteCognitionTable
+          ASSET_BUCKET: !Ref NoteCognitionAssetsBucket
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref NoteCognitionTable
+        - S3WritePolicy:
+            BucketName: !Ref NoteCognitionAssetsBucket
       Events:
         ApiEvent:
           Type: Api

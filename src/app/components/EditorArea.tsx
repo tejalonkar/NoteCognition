@@ -1,4 +1,5 @@
 import { useEffect, useRef, forwardRef, useImperativeHandle, memo } from 'react';
+import { uploadService } from '../services/UploadService';
 
 declare global {
   interface Window {
@@ -42,6 +43,21 @@ export const EditorArea = memo(forwardRef<EditorAreaRef, EditorAreaProps>(
           return;
         }
 
+        const insertUploadedImage = async (file: File, insertImage?: (url: string) => void) => {
+          try {
+            const url = await uploadService.uploadImage(file);
+            if (insertImage) {
+              insertImage(url);
+            } else if (editorInstance.current?.cm) {
+              editorInstance.current.cm.replaceSelection(`![${file.name}](${url})`);
+              editorInstance.current.cm.focus();
+            }
+          } catch (err) {
+            console.error('[Editor] Image upload failed:', err);
+            window.alert('Image upload failed. Sign in and try again.');
+          }
+        };
+
         editorInstance.current = window.editormd(editorId, {
           width: "100%",
           height: "100%",
@@ -63,7 +79,10 @@ export const EditorArea = memo(forwardRef<EditorAreaRef, EditorAreaProps>(
           sequenceDiagram: false, 
           imageUpload: true,
           imageFormats: ["jpg", "jpeg", "gif", "png", "bmp", "webp"],
-          imageUploadURL: "./php/upload.php",
+          imageUploadFunction: function(files: File[], insertImage: (url: string) => void) {
+            const file = files?.[0];
+            if (file) insertUploadedImage(file, insertImage);
+          },
           onload: function() {
             if (viewMode === 'editor') {
                 this.unwatch();
@@ -71,6 +90,25 @@ export const EditorArea = memo(forwardRef<EditorAreaRef, EditorAreaProps>(
                 this.watch();
             } else if (viewMode === 'preview') {
                 this.watch().previewing();
+            }
+
+            const wrapper = this.cm?.getWrapperElement?.();
+            if (wrapper) {
+              const handlePaste = (event: ClipboardEvent) => {
+                const file = Array.from(event.clipboardData?.files || []).find((item) => item.type.startsWith('image/'));
+                if (!file) return;
+                event.preventDefault();
+                insertUploadedImage(file);
+              };
+              const handleDrop = (event: DragEvent) => {
+                const file = Array.from(event.dataTransfer?.files || []).find((item) => item.type.startsWith('image/'));
+                if (!file) return;
+                event.preventDefault();
+                insertUploadedImage(file);
+              };
+
+              wrapper.addEventListener('paste', handlePaste);
+              wrapper.addEventListener('drop', handleDrop);
             }
           },
           onchange: function() {

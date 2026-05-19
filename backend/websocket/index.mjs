@@ -1,24 +1,47 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, GetCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 const TABLE_NAME = process.env.TABLE_NAME;
 
+const getAuthorizedUserId = (requestContext) => {
+  const authorizer = requestContext.authorizer || {};
+  return (
+    authorizer.claims?.sub ||
+    authorizer.jwt?.claims?.sub ||
+    authorizer.principalId ||
+    null
+  );
+};
+
 export const handler = async (event) => {
   const { routeKey, connectionId } = event.requestContext;
-  
-  // Note: For real apps, we should verify the JWT token passed in query string on $connect
-  // For now, we'll assume a 'demo-user' or extract from query if present
-  const userId = event.queryStringParameters?.userId || "demo-user";
+  const userId = getAuthorizedUserId(event.requestContext);
 
   try {
     if (routeKey === "$connect") {
+      if (!userId) {
+        return { statusCode: 401, body: "Unauthorized" };
+      }
+
       await docClient.send(new PutCommand({
         TableName: TABLE_NAME,
         Item: {
           PK: `USER#${userId}`,
           SK: `CONN#${connectionId}`,
+          userId,
+          connectionId,
+          ttl: Math.floor(Date.now() / 1000) + 3600
+        }
+      }));
+      await docClient.send(new PutCommand({
+        TableName: TABLE_NAME,
+        Item: {
+          PK: `CONN#${connectionId}`,
+          SK: `CONN#${connectionId}`,
+          userId,
+          connectionId,
           ttl: Math.floor(Date.now() / 1000) + 3600 // 1 hour TTL for safety
         }
       }));
@@ -26,10 +49,30 @@ export const handler = async (event) => {
     }
 
     if (routeKey === "$disconnect") {
+      const lookup = await docClient.send(new GetCommand({
+        TableName: TABLE_NAME,
+        Key: {
+          PK: `CONN#${connectionId}`,
+          SK: `CONN#${connectionId}`
+        }
+      }));
+      const connectedUserId = lookup.Item?.userId || userId;
+
+      if (!connectedUserId) {
+        return { statusCode: 200, body: "Disconnected" };
+      }
+
       await docClient.send(new DeleteCommand({
         TableName: TABLE_NAME,
         Key: {
-          PK: `USER#${userId}`,
+          PK: `USER#${connectedUserId}`,
+          SK: `CONN#${connectionId}`
+        }
+      }));
+      await docClient.send(new DeleteCommand({
+        TableName: TABLE_NAME,
+        Key: {
+          PK: `CONN#${connectionId}`,
           SK: `CONN#${connectionId}`
         }
       }));

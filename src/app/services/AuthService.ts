@@ -68,7 +68,6 @@ export class AuthService {
     const user = userPool.getCurrentUser();
     if (user) {
       user.signOut();
-      window.location.reload();
     }
   }
 }

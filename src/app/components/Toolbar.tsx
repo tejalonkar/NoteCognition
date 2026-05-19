@@ -4,6 +4,9 @@ import {
   Eye,
   EyeOff,
   Columns2,
+  LogIn,
+  LogOut,
+  User,
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -14,6 +17,10 @@ interface ToolbarProps {
   currentNoteTitle: string;
   onTitleChange: (title: string) => void;
   onExport: () => void;
+  isAuthenticated: boolean;
+  userEmail: string;
+  onSignIn: () => void;
+  onSignOut: () => void;
 }
 
 export function Toolbar({
@@ -24,6 +31,10 @@ export function Toolbar({
   currentNoteTitle,
   onTitleChange,
   onExport,
+  isAuthenticated,
+  userEmail,
+  onSignIn,
+  onSignOut,
 }: ToolbarProps) {
   return (
     <div
@@ -125,6 +136,45 @@ export function Toolbar({
           <Download className="w-4 h-4" />
           <span>Export</span>
         </button>
+        {isAuthenticated ? (
+          <div className="flex items-center gap-2">
+            <div
+              className="hidden sm:flex items-center gap-2 max-w-48 px-3 py-1.5 rounded-lg text-sm"
+              style={{
+                color: 'var(--md-text-secondary)',
+                border: '1px solid var(--md-border)'
+              }}
+            >
+              <User className="w-4 h-4 flex-shrink-0" />
+              <span className="truncate">{userEmail}</span>
+            </div>
+            <button
+              onClick={onSignOut}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-medium hover:bg-[#2D3250]"
+              style={{
+                color: 'var(--md-text-secondary)',
+                border: '1px solid var(--md-border)'
+              }}
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onSignIn}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-medium hover:bg-[#2D3250]"
+            style={{
+              color: 'var(--md-text-secondary)',
+              border: '1px solid var(--md-border)'
+            }}
+            title="Sign in"
+          >
+            <LogIn className="w-4 h-4" />
+            <span>Sign In</span>
+          </button>
+        )}
       </div>
     </div>
   );
