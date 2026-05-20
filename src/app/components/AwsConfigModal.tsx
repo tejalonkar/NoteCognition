@@ -9,7 +9,8 @@ import {
   Info, 
   Settings, 
   AlertTriangle,
-  Check
+  Check,
+  Download
 } from 'lucide-react';
 import { getAppConfig, saveCustomConfig, clearCustomConfig, type AppConfig } from '../services/ConfigService';
 
@@ -130,39 +131,31 @@ export function AwsConfigModal({ isOpen, onClose, onConfigChange }: AwsConfigMod
             Step 1: Deploy Infrastructure
           </h3>
           <p className="text-xs text-gray-400 mb-4 leading-relaxed">
-            You can deploy NoteCognition's serverless infrastructure (Cognito, DynamoDB, Lambdas, S3, WebSockets) by uploading the generated template to your AWS account:
+            You can deploy NoteCognition's serverless infrastructure (Cognito, DynamoDB, Lambdas, S3, WebSockets) by downloading the CloudFormation template and uploading it to your AWS account:
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3">
             <a
+              href="/cloudformation-template.yaml"
+              download="notecognition-template.yaml"
+              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs py-3 px-4 rounded-lg shadow flex items-center justify-center gap-2 transition-colors text-center"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download CloudFormation Template</span>
+            </a>
+
+            <a
               href="https://console.aws.amazon.com/cloudformation/home#/stacks/create/template"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs py-3 px-4 rounded-lg shadow flex items-center justify-center gap-2 transition-colors"
+              className="flex-1 bg-[#2D3250] hover:bg-[#2D3250]/80 border border-white/5 text-gray-300 font-medium text-xs py-3 px-4 rounded-lg shadow flex items-center justify-center gap-2 transition-colors"
             >
               <span>Open AWS CloudFormation Console</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
-            
-            <button
-              type="button"
-              onClick={() => handleCopy('transformed-template.yaml', 'template')}
-              className="px-4 py-3 bg-[#2D3250] hover:bg-[#2D3250]/80 border border-white/5 rounded-lg text-xs text-gray-300 font-medium flex items-center justify-center gap-2 transition-colors"
-            >
-              {copiedText === 'template' ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Copied filename!</span>
-                </>
-              ) : (
-                <>
-                  <span>Copy Template File Name</span>
-                </>
-              )}
-            </button>
           </div>
           <p className="text-[10px] text-gray-500 mt-2">
-            * In AWS, click **Upload a template file** and choose <code className="bg-black/40 px-1 py-0.5 rounded text-gray-400 text-[9px]">cloudformation/transformed-template.yaml</code> from your local repository.
+            * In AWS, click **Upload a template file** and choose the downloaded <code className="bg-black/40 px-1 py-0.5 rounded text-gray-400 text-[9px]">notecognition-template.yaml</code> file.
           </p>
         </div>
 
