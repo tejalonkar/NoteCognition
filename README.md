@@ -1,6 +1,8 @@
 # NoteCognition
 
-NoteCognition is a premium, local-first Markdown editor and note-taking platform. It features real-time synchronization, offline availability, and a unique **"Host-Your-Own-Data"** architecture that allows users to deploy and run their own private backend on their personal AWS account with a single click.
+NoteCognition is a premium, local-first Markdown editor and note-taking platform. Live website: **[notecognition.netlify.app](https://notecognition.netlify.app/)**
+
+It features real-time synchronization, offline availability, and a unique **"Host-Your-Own-Data"** architecture that allows users to deploy and run their own private backend on their personal AWS account with a single click.
 
 ---
 
