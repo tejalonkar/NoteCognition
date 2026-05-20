@@ -1,6 +1,6 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { DynamoDBDocumentClient, PutCommand, QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, DeleteCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const client = new DynamoDBClient({});
@@ -86,8 +86,9 @@ export const handler = async (event) => {
 
     if (httpMethod === "PUT" && path.startsWith("/file/")) {
       const fileId = path.split("/")[2];
-      const { content, title, preview, parentId } = body;
+      const { content, title, preview, parentId, version } = body;
       const now = new Date().toISOString();
+      const incomingVersion = version || 1;
       const item = {
         PK: `PARENT#${parentId || rootParentId}`,
         SK: `FILE#${fileId}`,
@@ -99,15 +100,48 @@ export const handler = async (event) => {
         preview: preview || "",
         ownerId: userId,
         updatedAt: now,
+        version: incomingVersion,
         ...buildGsiKeys(userId, now),
       };
-      await docClient.send(new PutCommand({
-        TableName: TABLE_NAME,
-        Item: item,
-        ConditionExpression: "attribute_not_exists(ownerId) OR ownerId = :ownerId",
-        ExpressionAttributeValues: { ":ownerId": userId },
-      }));
-      return response(200, item);
+
+      try {
+        await docClient.send(new PutCommand({
+          TableName: TABLE_NAME,
+          Item: item,
+          ConditionExpression: "(attribute_not_exists(ownerId) OR ownerId = :ownerId) AND (attribute_not_exists(version) OR version <= :incomingVersion)",
+          ExpressionAttributeValues: { 
+            ":ownerId": userId,
+            ":incomingVersion": incomingVersion
+          },
+        }));
+        return response(200, item);
+      } catch (error) {
+        if (error.name === "ConditionalCheckFailedException") {
+          // Fetch existing item to check if owner is correct and version is indeed newer
+          const existing = await docClient.send(new GetCommand({
+            TableName: TABLE_NAME,
+            Key: {
+              PK: `PARENT#${parentId || rootParentId}`,
+              SK: `FILE#${fileId}`
+            }
+          }));
+          const existingItem = existing.Item;
+          if (existingItem) {
+            if (existingItem.ownerId !== userId) {
+              return response(403, { error: "Forbidden" });
+            }
+            if (existingItem.version && existingItem.version > incomingVersion) {
+              return response(409, {
+                error: "Conflict",
+                serverVersion: existingItem.version,
+                serverItem: existingItem
+              });
+            }
+          }
+          return response(403, { error: "Forbidden" });
+        }
+        throw error;
+      }
     }
 
     if (httpMethod === "GET" && path === "/sync/pull") {

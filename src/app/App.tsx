@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { EditorArea, type EditorAreaRef } from './components/EditorArea';
@@ -9,6 +9,18 @@ import { db, type Folder, type Note } from './db';
 import { authService } from './services/AuthService';
 import { syncService, type SyncStatus } from './services/SyncService';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { Toaster } from './components/ui/sonner';
+import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from './components/ui/alert-dialog';
 
 
 
@@ -22,8 +34,23 @@ export default function App() {
   const [userEmail, setUserEmail] = useState('');
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
   const [searchQuery, setSearchQuery] = useState('');
-  // Sort by updatedAt so newest notes are at the top
-  const notes = useLiveQuery(() => db.notes.orderBy('updatedAt').reverse().toArray()) || [];
+  
+  const notes = useLiveQuery(() => db.notes.toArray()) || [];
+  const [sortBy, setSortBy] = useState<'modified' | 'alphabetical' | 'created'>('modified');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; type: 'note' | 'folder'; name: string } | null>(null);
+
+  const sortedNotes = useMemo(() => {
+    const notesCopy = [...notes];
+    if (sortBy === 'modified') {
+      return notesCopy.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    } else if (sortBy === 'alphabetical') {
+      return notesCopy.sort((a, b) => a.title.localeCompare(b.title));
+    } else if (sortBy === 'created') {
+      return notesCopy.sort((a, b) => b.id.localeCompare(a.id));
+    }
+    return notesCopy;
+  }, [notes, sortBy]);
+
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'editor' | 'preview' | 'split'>('editor');
   const editorRef = useRef<EditorAreaRef>(null);
@@ -56,6 +83,23 @@ export default function App() {
     syncService.onStatusChange(setSyncStatus);
   }, []);
 
+  // Toast on sync status change
+  const prevSyncStatusRef = useRef<SyncStatus | null>(null);
+  useEffect(() => {
+    if (prevSyncStatusRef.current === null) {
+      prevSyncStatusRef.current = syncStatus;
+      return;
+    }
+    if (syncStatus === 'synced') {
+      toast.success('Sync complete. All changes saved.');
+    } else if (syncStatus === 'error') {
+      toast.error('Sync failed. Please check your connection.');
+    } else if (syncStatus === 'offline') {
+      toast.info('Running offline. Changes will be synced when reconnected.');
+    }
+    prevSyncStatusRef.current = syncStatus;
+  }, [syncStatus]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -74,6 +118,68 @@ export default function App() {
       isMounted = false;
     };
   }, [configureSync]);
+
+  const shortcutsRef = useRef({
+    newNote: handleNewNote,
+    toggleSidebar: () => setIsSidebarOpen((prev) => !prev),
+    toggleViewMode: () => setViewMode((prev) => (prev === 'editor' ? 'preview' : 'editor')),
+    forceSync: () => {
+      syncService.pullAll()
+        .then(() => toast.success('Forced sync complete.'))
+        .catch((err: any) => toast.error(`Sync failed: ${err.message}`));
+    }
+  });
+
+  useEffect(() => {
+    shortcutsRef.current = {
+      newNote: handleNewNote,
+      toggleSidebar: () => setIsSidebarOpen((prev) => !prev),
+      toggleViewMode: () => setViewMode((prev) => (prev === 'editor' ? 'preview' : 'editor')),
+      forceSync: () => {
+        syncService.pullAll()
+          .then(() => toast.success('Forced sync complete.'))
+          .catch((err: any) => toast.error(`Sync failed: ${err.message}`));
+      }
+    };
+  });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isCtrl = e.ctrlKey || e.metaKey;
+      if (!isCtrl) return;
+
+      switch (e.key.toLowerCase()) {
+        case 'n':
+          e.preventDefault();
+          shortcutsRef.current.newNote();
+          break;
+        case 's':
+          e.preventDefault();
+          shortcutsRef.current.forceSync();
+          break;
+        case 'e':
+          e.preventDefault();
+          shortcutsRef.current.toggleViewMode();
+          break;
+        case 'b':
+          e.preventDefault();
+          shortcutsRef.current.toggleSidebar();
+          break;
+        case 'k':
+          const searchInput = document.getElementById('sidebar-search-input');
+          if (searchInput) {
+            e.preventDefault();
+            searchInput.focus();
+          }
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, []);
   
   // Local state for the editor content to avoid frequent DB-driven re-renders during typing
   const [localContent, setLocalContent] = useState<string>('');
@@ -100,11 +206,15 @@ export default function App() {
     const previewEnd = thirdNewline === -1 ? (secondNewline === -1 ? content.length : secondNewline) : thirdNewline;
     const previewText = content.substring(firstNewline + 1, previewEnd).replace(/\n/g, ' ').trim();
     
+    const existingNote = await db.notes.get(id);
+    const nextVersion = (existingNote?.version || 1) + 1;
+
     await db.notes.update(id, {
         content: content,
         title: firstLine || 'Untitled',
         preview: previewText.slice(0, 50) || 'No content',
         updatedAt: new Date(),
+        version: nextVersion,
     });
   };
 
@@ -152,13 +262,17 @@ export default function App() {
   const handleTitleChange = async (newTitle: string) => {
     if (!currentNoteId) return;
 
+    const existingNote = await db.notes.get(currentNoteId);
+    const nextVersion = (existingNote?.version || 1) + 1;
+
     await db.notes.update(currentNoteId, {
       title: newTitle,
       updatedAt: new Date(),
+      version: nextVersion,
     });
   };
 
-  const handleNewNote = async () => {
+  async function handleNewNote() {
     const id = Date.now().toString();
     const newNote: Note = {
       id,
@@ -167,19 +281,43 @@ export default function App() {
       content: '# Untitled\n\nStart writing...',
       parentId: 'ROOT',
       updatedAt: new Date(),
+      version: 1,
     };
 
     await db.notes.add(newNote);
     setCurrentNoteId(id);
   };
 
-  const handleDeleteNote = async (id: string) => {
-    await db.notes.delete(id);
-
-    if (currentNoteId === id) {
-      const remainingNotes = notes.filter((note) => note.id !== id);
-      setCurrentNoteId(remainingNotes.length > 0 ? remainingNotes[0].id : null);
+  const handleDeleteNoteClick = async (id: string) => {
+    const note = await db.notes.get(id);
+    if (note) {
+      setDeleteTarget({ id, type: 'note', name: note.title });
     }
+  };
+
+  const handleDeleteFolderClick = async (id: string) => {
+    const folder = await db.folders.get(id);
+    if (folder) {
+      setDeleteTarget({ id, type: 'folder', name: folder.name });
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    if (deleteTarget.type === 'note') {
+      await db.notes.delete(deleteTarget.id);
+      if (currentNoteId === deleteTarget.id) {
+        const remainingNotes = notes.filter((note) => note.id !== deleteTarget.id);
+        setCurrentNoteId(remainingNotes.length > 0 ? remainingNotes[0].id : null);
+      }
+      toast.success(`Note "${deleteTarget.name}" deleted successfully.`);
+    } else if (deleteTarget.type === 'folder') {
+      await deleteFolderRecursive(deleteTarget.id);
+      toast.success(`Folder "${deleteTarget.name}" deleted successfully.`);
+    }
+
+    setDeleteTarget(null);
   };
 
   const handleNewFolder = async () => {
@@ -204,10 +342,6 @@ export default function App() {
 
     await Promise.all(childNotes.map((note) => db.notes.delete(note.id)));
     await db.folders.delete(folderId);
-  };
-
-  const handleDeleteFolder = async (id: string) => {
-    await deleteFolderRecursive(id);
   };
 
   const handleRenameFolder = async (id: string, name: string) => {
@@ -275,18 +409,19 @@ export default function App() {
         <Sidebar
           isOpen={isSidebarOpen}
           onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
-          notes={notes}
+          notes={sortedNotes}
           currentNoteId={currentNoteId}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
           onSelectNote={handleSelectNote}
           onNewNote={handleNewNote}
           onNewFolder={handleNewFolder}
-          onDeleteNote={handleDeleteNote}
-          onDeleteFolder={handleDeleteFolder}
+          onDeleteNote={handleDeleteNoteClick}
+          onDeleteFolder={handleDeleteFolderClick}
           onRenameFolder={handleRenameFolder}
+          sortBy={sortBy}
+          onSortByChange={setSortBy}
         />
-
         <div className="flex-1 flex overflow-hidden">
           {!currentNoteId ? (
             <EmptyState onNewNote={handleNewNote} />
@@ -297,10 +432,8 @@ export default function App() {
                 content={currentNote?.content || ''}
                 onChange={handleContentChange}
                 viewMode={viewMode}
-
               />
             </div>
-
           )}
         </div>
       </div>
@@ -317,6 +450,33 @@ export default function App() {
         onSuccess={handleAuthSuccess}
         onClose={() => setShowAuthModal(false)}
       />
+
+      <Toaster closeButton richColors position="top-right" />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent className="border-none bg-[#2D3250] text-[#F9DEC9]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-bold text-[#F9DEC9]">
+              Delete {deleteTarget?.type === 'note' ? 'Note' : 'Folder'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm text-[#7077A1]">
+              Are you sure you want to delete {deleteTarget?.type === 'note' ? 'note' : 'folder'} "{deleteTarget?.name}"? 
+              {deleteTarget?.type === 'folder' && ' This will recursively delete all notes and folders inside it.'} This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-4 gap-2">
+            <AlertDialogCancel className="bg-[#43486F] hover:bg-[#575C83] text-[#F9DEC9] border-none">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete}
+              className="bg-[#D16B70] hover:bg-[#E27D82] text-white border-none font-bold"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

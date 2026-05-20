@@ -15,9 +15,36 @@ const getAuthorizedUserId = (requestContext) => {
   );
 };
 
+const getUserIdFromToken = (token) => {
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+    
+    // Validate expiration
+    if (payload.exp && Date.now() / 1000 > payload.exp) {
+      console.warn("Token has expired");
+      return null;
+    }
+    
+    return payload.sub || null;
+  } catch (err) {
+    console.error("Failed to parse token:", err);
+    return null;
+  }
+};
+
 export const handler = async (event) => {
   const { routeKey, connectionId } = event.requestContext;
-  const userId = getAuthorizedUserId(event.requestContext);
+  let userId = getAuthorizedUserId(event.requestContext);
+
+  if (!userId) {
+    const token = event.queryStringParameters?.token || event.queryStringParameters?.Token;
+    if (token) {
+      userId = getUserIdFromToken(token);
+    }
+  }
 
   try {
     if (routeKey === "$connect") {

@@ -138,17 +138,6 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref NoteCognitionTable
-      Events:
-        ConnectEvent:
-          Type: WebSocket
-          Properties:
-            ApiId: !Ref NoteCognitionWebSocketApi
-            RouteKey: '$connect'
-        DisconnectEvent:
-          Type: WebSocket
-          Properties:
-            ApiId: !Ref NoteCognitionWebSocketApi
-            RouteKey: '$disconnect'
 
   StreamProcessorLambda:
     Type: AWS::Serverless::Function
@@ -183,12 +172,69 @@ Resources:
       ProtocolType: WEBSOCKET
       RouteSelectionExpression: "$request.body.action"
 
+  WebSocketConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      RouteKey: '$connect'
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketConnectIntegration}'
+
+  WebSocketConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketHandlerLambda.Arn}/invocations'
+
+  WebSocketDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      RouteKey: '$disconnect'
+      Target: !Sub 'integrations/${WebSocketDisconnectIntegration}'
+
+  WebSocketDisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketHandlerLambda.Arn}/invocations'
+
+  WebSocketDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+      - WebSocketConnectRoute
+      - WebSocketDisconnectRoute
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      DeploymentId: !Ref WebSocketDeployment
+      StageName: !Ref Environment
+
+  WebSocketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WebSocketHandlerLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${NoteCognitionWebSocketApi}/*'
+
   NoteCognitionApi:
     Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
       Auth:
         DefaultAuthorizer: MyCognitoAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
         Authorizers:
           MyCognitoAuthorizer:
             UserPoolArn: !GetAtt NoteCognitionUserPool.Arn

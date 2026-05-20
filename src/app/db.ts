@@ -7,6 +7,7 @@ interface Note {
   content: string;
   parentId?: string;
   updatedAt: Date;
+  version?: number;
 }
 
 interface Folder {
@@ -32,6 +33,15 @@ db.version(2).stores({
 }).upgrade(async (transaction) => {
   await transaction.table('notes').toCollection().modify((note) => {
     if (!note.parentId) note.parentId = 'ROOT';
+  });
+});
+
+db.version(3).stores({
+  notes: 'id, title, updatedAt, parentId, version',
+  folders: 'id, name, parentId, updatedAt'
+}).upgrade(async (transaction) => {
+  await transaction.table('notes').toCollection().modify((note) => {
+    if (note.version === undefined) note.version = 1;
   });
 });
 

@@ -247,15 +247,39 @@ export class SyncService {
         content: note.content,
         title: note.title,
         preview: note.preview,
-        parentId: note.parentId || 'ROOT'
+        parentId: note.parentId || 'ROOT',
+        version: note.version || 1
       })
     });
+
+    if (response.status === 409) {
+      const conflictData = await response.json();
+      await this.resolveConflict(note, conflictData.serverItem);
+      return;
+    }
 
     if (!response.ok) {
       throw new Error(`Failed to sync note ${note.id}`);
     }
 
     this.setStatus('synced');
+  }
+
+  private async resolveConflict(localNote: Note, serverItem: any) {
+    console.log(`[Sync] Resolving conflict for note ${localNote.id}`);
+    const localTime = new Date(localNote.updatedAt).getTime();
+    const serverTime = new Date(serverItem.updatedAt).getTime();
+
+    if (localTime > serverTime) {
+      console.log(`[Sync] Local is newer. Overwriting server version.`);
+      await db.notes.update(localNote.id, {
+        version: (serverItem.version || 1) + 1,
+        updatedAt: new Date()
+      });
+    } else {
+      console.log(`[Sync] Server is newer. Applying server changes locally.`);
+      await this.applyRemoteNote(serverItem);
+    }
   }
 
   async pushFolder(folder: Folder) {
@@ -341,7 +365,8 @@ export class SyncService {
         content: remoteNote.content,
         preview: remoteNote.preview,
         parentId: remoteNote.parentId || 'ROOT',
-        updatedAt: new Date(remoteNote.updatedAt)
+        updatedAt: new Date(remoteNote.updatedAt),
+        version: remoteNote.version || 1
       });
       this.setStatus('synced');
     } finally {

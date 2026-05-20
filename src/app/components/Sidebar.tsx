@@ -16,6 +16,8 @@ interface SidebarProps {
   onDeleteNote: (id: string) => void;
   onDeleteFolder: (id: string) => void;
   onRenameFolder: (id: string, name: string) => void;
+  sortBy: 'modified' | 'alphabetical' | 'created';
+  onSortByChange: (sortBy: 'modified' | 'alphabetical' | 'created') => void;
 }
 
 export function Sidebar({
@@ -31,6 +33,8 @@ export function Sidebar({
   onDeleteNote,
   onDeleteFolder,
   onRenameFolder,
+  sortBy,
+  onSortByChange,
 }: SidebarProps) {
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredNotes = normalizedQuery
@@ -80,6 +84,7 @@ export function Sidebar({
               >
                 <Search className="w-4 h-4" style={{ color: 'var(--md-accent-muted)' }} />
                 <input
+                  id="sidebar-search-input"
                   type="text"
                   placeholder="Search notes..."
                   className="flex-1 min-w-0 bg-transparent border-none outline-none text-sm"
@@ -98,6 +103,20 @@ export function Sidebar({
                   </button>
                 )}
               </div>
+            </div>
+
+            <div className="flex items-center justify-between mb-4 px-1">
+              <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--md-text-secondary)' }}>Sort By</span>
+              <select
+                value={sortBy}
+                onChange={(e) => onSortByChange(e.target.value as 'modified' | 'alphabetical' | 'created')}
+                className="bg-transparent text-xs outline-none border-none cursor-pointer"
+                style={{ color: 'var(--md-accent-muted)' }}
+              >
+                <option value="modified" style={{ backgroundColor: 'var(--md-secondary-surface)', color: 'var(--md-text-primary)' }}>Last Modified</option>
+                <option value="alphabetical" style={{ backgroundColor: 'var(--md-secondary-surface)', color: 'var(--md-text-primary)' }}>Alphabetical</option>
+                <option value="created" style={{ backgroundColor: 'var(--md-secondary-surface)', color: 'var(--md-text-primary)' }}>Created Date</option>
+              </select>
             </div>
 
             <div className="grid grid-cols-2 gap-2 mb-4">
