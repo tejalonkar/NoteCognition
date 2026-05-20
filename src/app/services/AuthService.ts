@@ -4,25 +4,64 @@ import {
   CognitoUser, 
   AuthenticationDetails 
 } from 'amazon-cognito-identity-js';
+import { getAppConfig } from './ConfigService';
 
-// Configuration placeholders (to be filled from CloudFormation outputs)
-const poolData = {
-  UserPoolId: import.meta.env.VITE_USER_POOL_ID || '', 
-  ClientId: import.meta.env.VITE_USER_POOL_CLIENT_ID || ''
-};
+let cachedUserPool: CognitoUserPool | null = null;
+let cachedUserPoolId = '';
+let cachedClientId = '';
 
-let userPool: CognitoUserPool;
-try {
-  userPool = new CognitoUserPool(poolData);
-} catch (e) {
-  userPool = { getCurrentUser: () => null } as any;
+function getUserPool(): CognitoUserPool {
+  const config = getAppConfig();
+  const poolId = config.userPoolId;
+  const clientId = config.userPoolClientId;
+
+  const isConfigured = !!(poolId && clientId);
+  if (!isConfigured) {
+    return { getCurrentUser: () => null } as any;
+  }
+
+  if (cachedUserPool && cachedUserPoolId === poolId && cachedClientId === clientId) {
+    return cachedUserPool;
+  }
+
+  try {
+    cachedUserPool = new CognitoUserPool({
+      UserPoolId: poolId,
+      ClientId: clientId,
+    });
+    cachedUserPoolId = poolId;
+    cachedClientId = clientId;
+    return cachedUserPool;
+  } catch (e) {
+    console.error('Failed to initialize CognitoUserPool:', e);
+    return { getCurrentUser: () => null } as any;
+  }
 }
 
 export class AuthService {
+  isConfigured(): boolean {
+    const config = getAppConfig();
+    return !!(config.userPoolId && config.userPoolClientId);
+  }
+
+  private checkConfiguration() {
+    if (!this.isConfigured()) {
+      throw new Error(
+        "AWS Cognito is not configured. Please ensure VITE_USER_POOL_ID and VITE_USER_POOL_CLIENT_ID are set in your environment variables or custom settings."
+      );
+    }
+  }
+
   signUp(email: string, password: string): Promise<any> {
+    try {
+      this.checkConfiguration();
+    } catch (err: any) {
+      return Promise.reject(err);
+    }
+
     return new Promise((resolve, reject) => {
       const attributeList = [new CognitoUserAttribute({ Name: 'email', Value: email })];
-      userPool.signUp(email, password, attributeList, [], (err, result) => {
+      getUserPool().signUp(email, password, attributeList, [], (err, result) => {
         if (err) return reject(err);
         resolve(result);
       });
@@ -30,8 +69,14 @@ export class AuthService {
   }
 
   confirmSignUp(email: string, code: string): Promise<any> {
+    try {
+      this.checkConfiguration();
+    } catch (err: any) {
+      return Promise.reject(err);
+    }
+
     return new Promise((resolve, reject) => {
-      const userData = { Username: email, Pool: userPool };
+      const userData = { Username: email, Pool: getUserPool() };
       const cognitoUser = new CognitoUser(userData);
       cognitoUser.confirmRegistration(code, true, (err, result) => {
         if (err) return reject(err);
@@ -41,10 +86,16 @@ export class AuthService {
   }
 
   signIn(email: string, password: string): Promise<any> {
+    try {
+      this.checkConfiguration();
+    } catch (err: any) {
+      return Promise.reject(err);
+    }
+
     return new Promise((resolve, reject) => {
       const authenticationData = { Username: email, Password: password };
       const authenticationDetails = new AuthenticationDetails(authenticationData);
-      const userData = { Username: email, Pool: userPool };
+      const userData = { Username: email, Pool: getUserPool() };
       const cognitoUser = new CognitoUser(userData);
       cognitoUser.authenticateUser(authenticationDetails, {
         onSuccess: (result) => resolve(result),
@@ -54,8 +105,14 @@ export class AuthService {
   }
 
   getSession(): Promise<any> {
+    try {
+      this.checkConfiguration();
+    } catch (err: any) {
+      return Promise.reject(err);
+    }
+
     return new Promise((resolve, reject) => {
-      const user = userPool.getCurrentUser();
+      const user = getUserPool().getCurrentUser();
       if (!user) return reject('No user logged in');
       user.getSession((err: any, session: any) => {
         if (err) return reject(err);
@@ -65,7 +122,8 @@ export class AuthService {
   }
 
   signOut() {
-    const user = userPool.getCurrentUser();
+    if (!this.isConfigured()) return;
+    const user = getUserPool().getCurrentUser();
     if (user) {
       user.signOut();
     }

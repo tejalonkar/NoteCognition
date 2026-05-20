@@ -5,9 +5,11 @@ import { EditorArea, type EditorAreaRef } from './components/EditorArea';
 import { EmptyState } from './components/EmptyState';
 import { StatusBar } from './components/StatusBar';
 import { AuthModal } from './components/AuthModal';
+import { AwsConfigModal } from './components/AwsConfigModal';
 import { db, type Folder, type Note } from './db';
 import { authService } from './services/AuthService';
 import { syncService, type SyncStatus } from './services/SyncService';
+import { getAppConfig } from './services/ConfigService';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner';
@@ -31,6 +33,7 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAwsModal, setShowAwsModal] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,9 +68,10 @@ export default function App() {
 
     if (!userId) return;
 
+    const config = getAppConfig();
     syncService.configure({
-      apiUrl: import.meta.env.VITE_API_URL || '',
-      wsUrl: import.meta.env.VITE_WS_URL || '',
+      apiUrl: config.apiUrl,
+      wsUrl: config.wsUrl,
       userId,
       getToken: async () => {
         const freshSession = await authService.getSession();
@@ -78,6 +82,22 @@ export default function App() {
     setIsAuthenticated(true);
     setUserEmail(email);
   }, []);
+
+  const handleConfigChange = () => {
+    syncService.disconnect();
+    authService.signOut();
+    setIsAuthenticated(false);
+    setUserEmail('');
+    
+    // Attempt session update on new pool if possible
+    authService.getSession()
+      .then((session) => {
+        configureSync(session);
+      })
+      .catch(() => {
+        // Expected since configuration changed and user has to login
+      });
+  };
 
   useEffect(() => {
     syncService.onStatusChange(setSyncStatus);
@@ -403,6 +423,7 @@ export default function App() {
         userEmail={userEmail}
         onSignIn={() => setShowAuthModal(true)}
         onSignOut={handleSignOut}
+        onOpenAwsConfig={() => setShowAwsModal(true)}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -449,6 +470,11 @@ export default function App() {
         isOpen={showAuthModal}
         onSuccess={handleAuthSuccess}
         onClose={() => setShowAuthModal(false)}
+      />
+      <AwsConfigModal
+        isOpen={showAwsModal}
+        onClose={() => setShowAwsModal(false)}
+        onConfigChange={handleConfigChange}
       />
 
       <Toaster closeButton richColors position="top-right" />

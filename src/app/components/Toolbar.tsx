@@ -7,6 +7,7 @@ import {
   LogIn,
   LogOut,
   User,
+  Cloud,
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -21,6 +22,7 @@ interface ToolbarProps {
   userEmail: string;
   onSignIn: () => void;
   onSignOut: () => void;
+  onOpenAwsConfig: () => void;
 }
 
 export function Toolbar({
@@ -35,6 +37,7 @@ export function Toolbar({
   userEmail,
   onSignIn,
   onSignOut,
+  onOpenAwsConfig,
 }: ToolbarProps) {
   return (
     <div
@@ -125,6 +128,19 @@ export function Toolbar({
       {/* Right Section - Actions */}
       <div className="flex items-center gap-2">
         <button
+          onClick={onOpenAwsConfig}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-medium hover:bg-[#2D3250]"
+          style={{ 
+            color: 'var(--md-text-secondary)',
+            border: '1px solid var(--md-border)' 
+          }}
+          title="AWS Hosting Settings"
+        >
+          <Cloud className="w-4 h-4" />
+          <span className="hidden sm:inline">Cloud Host</span>
+        </button>
+
+        <button
           onClick={onExport}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-medium hover:bg-[#2D3250]"
           style={{ 
@@ -134,7 +150,7 @@ export function Toolbar({
           title="Export as Markdown (.md)"
         >
           <Download className="w-4 h-4" />
-          <span>Export</span>
+          <span className="hidden sm:inline">Export</span>
         </button>
         {isAuthenticated ? (
           <div className="flex items-center gap-2">
