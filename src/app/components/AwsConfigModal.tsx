@@ -165,10 +165,13 @@ export function AwsConfigModal({ isOpen, onClose, onConfigChange }: AwsConfigMod
             <Cloud className="w-4 h-4 text-indigo-400" />
             Step 2: Connect Stack Outputs
           </h3>
+          <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+            Go to your AWS CloudFormation Console, click on your stack, open the <strong>Outputs</strong> tab, and copy/paste the values shown there:
+          </p>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">VITE_API_URL</label>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">API Gateway URL (ApiUrl)</label>
               <input
                 type="url"
                 required
@@ -180,7 +183,7 @@ export function AwsConfigModal({ isOpen, onClose, onConfigChange }: AwsConfigMod
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">VITE_WS_URL</label>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">WebSocket URL (WebSocketUrl)</label>
               <input
                 type="url"
                 required
@@ -192,7 +195,7 @@ export function AwsConfigModal({ isOpen, onClose, onConfigChange }: AwsConfigMod
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">VITE_USER_POOL_ID</label>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Cognito User Pool ID (UserPoolId)</label>
               <input
                 type="text"
                 required
@@ -204,7 +207,7 @@ export function AwsConfigModal({ isOpen, onClose, onConfigChange }: AwsConfigMod
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">VITE_USER_POOL_CLIENT_ID</label>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Cognito Client ID (UserPoolClientId)</label>
               <input
                 type="text"
                 required
@@ -216,7 +219,7 @@ export function AwsConfigModal({ isOpen, onClose, onConfigChange }: AwsConfigMod
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">VITE_REGION</label>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">AWS Region (e.g. ap-south-1)</label>
               <input
                 type="text"
                 required
