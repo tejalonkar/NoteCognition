@@ -1,129 +1,463 @@
-# CloudFormation / SAM template for NoteCognition
-AWSTemplateFormatVersion: '2010-09-09'
-Description: >
-  Serverless stack for NoteCognition application.
+# # CloudFormation / SAM template for NoteCognition
+# AWSTemplateFormatVersion: '2010-09-09'
+# Description: >
+#   Serverless stack for NoteCognition application.
 
-Parameters:
-  DeploymentBucket:
-    Type: String
-    Description: |
-      Name of an existing S3 bucket in this account/region that will hold deployment artefacts (e.g., SAM packaged templates). The bucket must exist before you run `sam deploy`.
-    AllowedPattern: ^[a-z0-9.-]{3,63}$
-    ConstraintDescription: Must be a valid S3 bucket name.
+# Parameters:
+#   DeploymentBucket:
+#     Type: String
+#     Description: |
+#       Name of an existing S3 bucket in this account/region that will hold deployment artefacts (e.g., SAM packaged templates). The bucket must exist before you run `sam deploy`.
+#     AllowedPattern: ^[a-z0-9.-]{3,63}$
+#     ConstraintDescription: Must be a valid S3 bucket name.
+
+# Resources:
+#   # Execution role for the WebSocket Lambda
+#   WebSocketHandlerRole:
+#     Type: AWS::IAM::Role
+#     Properties:
+#       AssumeRolePolicyDocument:
+#         Version: "2012-10-17"
+#         Statement:
+#           - Effect: Allow
+#             Principal:
+#               Service: [lambda.amazonaws.com]
+#             Action: ["sts:AssumeRole"]
+#       ManagedPolicyArns:
+#         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+#       Policies:
+#         - PolicyName: LambdaS3ReadPolicy
+#           PolicyDocument:
+#             Version: "2012-10-17"
+#             Statement:
+#               - Effect: Allow
+#                 Action:
+#                   - s3:GetObject
+#                 Resource: !Sub "arn:aws:s3:::${DeploymentBucket}/*"
+
+#   # WebSocket Lambda – code is now inline using ZipFile
+#   WebSocketHandlerLambda:
+#     Type: AWS::Lambda::Function
+#     Properties:
+#       FunctionName: WebSocketHandler
+#       Runtime: nodejs20.x
+#       Handler: index.handler
+#       Role: !GetAtt WebSocketHandlerRole.Arn
+#       Code:
+#         ZipFile: |
+#           // Inline Lambda handler – copy the contents of backend/websocket/index.js here.
+#           const AWS = require('aws-sdk');
+#           const ddb = new AWS.DynamoDB.DocumentClient();
+#           const apigw = new AWS.ApiGatewayManagementApi({
+#             endpoint: process.env.WEBSOCKET_ENDPOINT
+#           });
+
+#           exports.handler = async (event) => {
+#             // Parse the incoming WebSocket message
+#             const records = event.Records || [];
+#             for (const record of records) {
+#               const body = JSON.parse(record.body);
+#               const { action, payload } = body;
+
+#               // Example: Persist a note to DynamoDB
+#               if (action === "saveNote") {
+#                 await ddb.put({
+#                   TableName: process.env.NOTES_TABLE,
+#                   Item: payload
+#                 }).promise();
+#               }
+
+#               // Broadcast the message to all connected clients
+#               const connections = await ddb.scan({
+#                 TableName: process.env.CONNECTIONS_TABLE,
+#                 ProjectionExpression: "connectionId"
+#               }).promise();
+
+#               const postCalls = connections.Items.map(item => {
+#                 return apigw.postToConnection({
+#                   ConnectionId: item.connectionId,
+#                   Data: JSON.stringify({ action, payload })
+#                 }).promise();
+#               });
+
+#               await Promise.all(postCalls);
+#             }
+#           };
+#       Environment:
+#         Variables:
+#           WEBSOCKET_ENDPOINT: !Ref WebSocketEndpoint
+#           NOTES_TABLE: !Ref NotesTable
+#           CONNECTIONS_TABLE: !Ref ConnectionsTable
+#       Timeout: 30
+#       MemorySize: 256
+
+#   # Example supporting resources (API GW, DynamoDB tables, etc.)
+#   WebSocketEndpoint:
+#     Type: AWS::ApiGatewayV2::Api
+#     Properties:
+#       Name: NoteCognitionWebSocket
+#       ProtocolType: WEBSOCKET
+#       RouteSelectionExpression: "$request.body.action"
+
+#   NotesTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       TableName: Notes
+#       AttributeDefinitions:
+#         - AttributeName: noteId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: noteId
+#           KeyType: HASH
+#       BillingMode: PAY_PER_REQUEST
+
+#   ConnectionsTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       TableName: Connections
+#       AttributeDefinitions:
+#         - AttributeName: connectionId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: connectionId
+#           KeyType: HASH
+#       BillingMode: PAY_PER_REQUEST
+
+# Outputs:
+#   WebSocketUrl:
+#     Description: URL for the WebSocket API
+#     Value: !Sub "wss://${WebSocketEndpoint.ApiId}.execute-api.${AWS::Region}.amazonaws.com/"
+
+
+
+
+
+
+
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  NoteCognition Serverless WebSocket Backend
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
 
 Resources:
-  # Execution role for the WebSocket Lambda
-  WebSocketHandlerRole:
-    Type: AWS::IAM::Role
+
+  #########################################################
+  # DynamoDB Tables
+  #########################################################
+
+  NotesTable:
+    Type: AWS::DynamoDB::Table
     Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: [lambda.amazonaws.com]
-            Action: ["sts:AssumeRole"]
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: LambdaS3ReadPolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                Resource: !Sub "arn:aws:s3:::${DeploymentBucket}/*"
+      TableName: Notes
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: noteId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: noteId
+          KeyType: HASH
 
-  # WebSocket Lambda – code is now inline using ZipFile
-  WebSocketHandlerLambda:
-    Type: AWS::Lambda::Function
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
     Properties:
-      FunctionName: WebSocketHandler
-      Runtime: nodejs20.x
-      Handler: index.handler
-      Role: !GetAtt WebSocketHandlerRole.Arn
-      Code:
-        ZipFile: |
-          // Inline Lambda handler – copy the contents of backend/websocket/index.js here.
-          const AWS = require('aws-sdk');
-          const ddb = new AWS.DynamoDB.DocumentClient();
-          const apigw = new AWS.ApiGatewayManagementApi({
-            endpoint: process.env.WEBSOCKET_ENDPOINT
-          });
+      TableName: Connections
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
 
-          exports.handler = async (event) => {
-            // Parse the incoming WebSocket message
-            const records = event.Records || [];
-            for (const record of records) {
-              const body = JSON.parse(record.body);
-              const { action, payload } = body;
+  #########################################################
+  # WebSocket API
+  #########################################################
 
-              // Example: Persist a note to DynamoDB
-              if (action === "saveNote") {
-                await ddb.put({
-                  TableName: process.env.NOTES_TABLE,
-                  Item: payload
-                }).promise();
-              }
-
-              // Broadcast the message to all connected clients
-              const connections = await ddb.scan({
-                TableName: process.env.CONNECTIONS_TABLE,
-                ProjectionExpression: "connectionId"
-              }).promise();
-
-              const postCalls = connections.Items.map(item => {
-                return apigw.postToConnection({
-                  ConnectionId: item.connectionId,
-                  Data: JSON.stringify({ action, payload })
-                }).promise();
-              });
-
-              await Promise.all(postCalls);
-            }
-          };
-      Environment:
-        Variables:
-          WEBSOCKET_ENDPOINT: !Ref WebSocketEndpoint
-          NOTES_TABLE: !Ref NotesTable
-          CONNECTIONS_TABLE: !Ref ConnectionsTable
-      Timeout: 30
-      MemorySize: 256
-
-  # Example supporting resources (API GW, DynamoDB tables, etc.)
-  WebSocketEndpoint:
+  NoteCognitionWebSocketApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
       Name: NoteCognitionWebSocket
       ProtocolType: WEBSOCKET
       RouteSelectionExpression: "$request.body.action"
 
-  NotesTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: Notes
-      AttributeDefinitions:
-        - AttributeName: noteId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: noteId
-          KeyType: HASH
-      BillingMode: PAY_PER_REQUEST
+  #########################################################
+  # Lambda Function
+  #########################################################
 
-  ConnectionsTable:
-    Type: AWS::DynamoDB::Table
+  WebSocketHandlerFunction:
+    Type: AWS::Serverless::Function
     Properties:
-      TableName: Connections
-      AttributeDefinitions:
-        - AttributeName: connectionId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: connectionId
-          KeyType: HASH
-      BillingMode: PAY_PER_REQUEST
+      FunctionName: NoteCognitionWebSocketHandler
+
+      Handler: index.handler
+
+      InlineCode: |
+        const AWS = require('aws-sdk');
+
+        const ddb = new AWS.DynamoDB.DocumentClient();
+
+        exports.handler = async (event) => {
+
+          console.log("EVENT:", JSON.stringify(event));
+
+          const routeKey = event.requestContext.routeKey;
+
+          const connectionId = event.requestContext.connectionId;
+
+          const domainName = event.requestContext.domainName;
+
+          const stage = event.requestContext.stage;
+
+          const apigw = new AWS.ApiGatewayManagementApi({
+            endpoint: `${domainName}/${stage}`
+          });
+
+          try {
+
+            // CONNECT ROUTE
+            if (routeKey === '$connect') {
+
+              await ddb.put({
+                TableName: process.env.CONNECTIONS_TABLE,
+                Item: {
+                  connectionId: connectionId
+                }
+              }).promise();
+
+              return {
+                statusCode: 200,
+                body: 'Connected'
+              };
+            }
+
+            // DISCONNECT ROUTE
+            if (routeKey === '$disconnect') {
+
+              await ddb.delete({
+                TableName: process.env.CONNECTIONS_TABLE,
+                Key: {
+                  connectionId: connectionId
+                }
+              }).promise();
+
+              return {
+                statusCode: 200,
+                body: 'Disconnected'
+              };
+            }
+
+            // DEFAULT MESSAGE ROUTE
+            const body = JSON.parse(event.body);
+
+            const action = body.action;
+
+            const payload = body.payload;
+
+            // Save note to DynamoDB
+            if (action === 'saveNote') {
+
+              await ddb.put({
+                TableName: process.env.NOTES_TABLE,
+                Item: payload
+              }).promise();
+            }
+
+            // Get all active connections
+            const connections = await ddb.scan({
+              TableName: process.env.CONNECTIONS_TABLE,
+              ProjectionExpression: 'connectionId'
+            }).promise();
+
+            // Broadcast message
+            const postCalls = connections.Items.map(async ({ connectionId }) => {
+
+              try {
+
+                await apigw.postToConnection({
+                  ConnectionId: connectionId,
+                  Data: JSON.stringify({
+                    action,
+                    payload
+                  })
+                }).promise();
+
+              } catch (err) {
+
+                console.log("Connection error:", err);
+
+                // Remove stale connections
+                if (err.statusCode === 410) {
+
+                  await ddb.delete({
+                    TableName: process.env.CONNECTIONS_TABLE,
+                    Key: {
+                      connectionId
+                    }
+                  }).promise();
+                }
+              }
+            });
+
+            await Promise.all(postCalls);
+
+            return {
+              statusCode: 200,
+              body: 'Message processed'
+            };
+
+          } catch (error) {
+
+            console.error("ERROR:", error);
+
+            return {
+              statusCode: 500,
+              body: JSON.stringify({
+                message: error.message
+              })
+            };
+          }
+        };
+
+      Environment:
+        Variables:
+          NOTES_TABLE: !Ref NotesTable
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+
+      Policies:
+
+        # DynamoDB permissions
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NotesTable
+
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConnectionsTable
+
+        # WebSocket management permissions
+        - Statement:
+            Effect: Allow
+            Action:
+              - execute-api:ManageConnections
+            Resource: !Sub >
+              arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${NoteCognitionWebSocketApi}/*
+
+  #########################################################
+  # Lambda Integrations
+  #########################################################
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
+
+  DisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
+
+  DefaultIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
+
+  #########################################################
+  # Routes
+  #########################################################
+
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      RouteKey: $connect
+      AuthorizationType: NONE
+      Target: !Sub integrations/${ConnectIntegration}
+
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      Target: !Sub integrations/${DisconnectIntegration}
+
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+      RouteKey: $default
+      AuthorizationType: NONE
+      Target: !Sub integrations/${DefaultIntegration}
+
+  #########################################################
+  # Lambda Permissions
+  #########################################################
+
+  ConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebSocketHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  DisconnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebSocketHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  DefaultPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebSocketHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  #########################################################
+  # Deployment + Stage
+  #########################################################
+
+  WebSocketDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+      - ConnectRoute
+      - DisconnectRoute
+      - DefaultRoute
+    Properties:
+      ApiId: !Ref NoteCognitionWebSocketApi
+
+  ProductionStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: prod
+      DeploymentId: !Ref WebSocketDeployment
+      ApiId: !Ref NoteCognitionWebSocketApi
+      AutoDeploy: true
 
 Outputs:
-  WebSocketUrl:
-    Description: URL for the WebSocket API
-    Value: !Sub "wss://${WebSocketEndpoint.ApiId}.execute-api.${AWS::Region}.amazonaws.com/"
+
+  WebSocketURL:
+    Description: WebSocket API URL
+    Value: !Sub >
+      wss://${NoteCognitionWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+
+  NotesTableName:
+    Description: Notes DynamoDB Table
+    Value: !Ref NotesTable
+
+  ConnectionsTableName:
+    Description: Connections DynamoDB Table
+    Value: !Ref ConnectionsTable
