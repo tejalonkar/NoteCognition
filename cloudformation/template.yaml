@@ -138,7 +138,10 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref NoteCognitionTable
-
+        - Statement:
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: arn:aws:s3:::notecognition-bootstrap-940920597951-ap-south-1/*
   StreamProcessorLambda:
     Type: AWS::Serverless::Function
     Properties:
