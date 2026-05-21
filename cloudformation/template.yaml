@@ -129,19 +129,43 @@ Resources:
   WebSocketHandlerLambda:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend/websocket/
-      Handler: index.handler
-      Runtime: nodejs20.x
-      Environment:
-        Variables:
-          TABLE_NAME: !Ref NoteCognitionTable
+       Handler: index.handler
+       Runtime: nodejs20.x
+       InlineCode: |
+         const AWS = require('aws-sdk');
+         const dynamo = new AWS.DynamoDB.DocumentClient();
+
+         exports.handler = async (event) => {
+           console.log('WebSocket event:', JSON.stringify(event));
+           // Example: echo back the received message
+           const connectionId = event.requestContext.connectionId;
+           const apiGateway = new AWS.ApiGatewayManagementApi({
+             endpoint: `${event.requestContext.domainName}/${event.requestContext.stage}`
+           });
+           const payload = {
+             action: 'echo',
+             data: event.body
+           };
+           await apiGateway.postToConnection({
+             ConnectionId: connectionId,
+             Data: JSON.stringify(payload)
+           }).promise();
+           return { statusCode: 200, body: 'Message sent' };
+         };
+
+         // For $connect and $disconnect you could add extra logic here if needed
+         // but SAM will still invoke this same handler for those routes.
+
+         // Note: error handling omitted for brevity.
+       Environment:
+         Variables:
+           TABLE_NAME: !Ref NoteCognitionTable
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref NoteCognitionTable
-        - Statement:
-            - Effect: Allow
-              Action: s3:GetObject
-              Resource: arn:aws:s3:::notecognition-bootstrap-940920597951-ap-south-1/*
+        - S3ReadPolicy:
+            BucketName: notecognition-bootstrap-940920597951-ap-south-1
+
   StreamProcessorLambda:
     Type: AWS::Serverless::Function
     Properties:
