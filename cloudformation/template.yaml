@@ -72,6 +72,21 @@ Resources:
             Action: 's3:GetObject'
             Resource: !Sub "${NoteCognitionAssetsBucket.Arn}/uploads/*"
 
+  BootstrapBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: notecognition-bootstrap-940920597951-ap-south-1
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowBootstrapRead
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource: arn:aws:s3:::notecognition-bootstrap-940920597951-ap-south-1/*
+
   NoteCognitionUserPool:
     Type: AWS::Cognito::UserPool
     Properties:
@@ -160,11 +175,15 @@ Resources:
        Environment:
          Variables:
            TABLE_NAME: !Ref NoteCognitionTable
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref NoteCognitionTable
-        - S3ReadPolicy:
-            BucketName: notecognition-bootstrap-940920597951-ap-south-1
+       Policies:
+         - DynamoDBCrudPolicy:
+             TableName: !Ref NoteCognitionTable
+         - Statement:
+             - Effect: Allow
+               Action:
+                 - s3:GetObject
+                 - s3:GetObjectVersion
+               Resource: arn:aws:s3:::notecognition-bootstrap-940920597951-ap-south-1/*
 
   StreamProcessorLambda:
     Type: AWS::Serverless::Function
