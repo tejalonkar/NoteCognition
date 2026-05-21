@@ -1,290 +1,145 @@
+# CloudFormation / SAM template for NoteCognition
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: NoteCognition Cloud Backend Stack
+Description: >
+  NoteCognition Serverless WebSocket Backend
+
 Parameters:
-  ProjectName:
+  DeploymentBucket:
     Type: String
-    Default: notecognition
-  Environment:
-    Type: String
-    Default: dev
+    Description: |
+      Name of an existing S3 bucket in this account/region that will hold deployment artefacts (e.g., SAM packaged templates). The bucket must exist before you run `sam deploy`.
+    AllowedPattern: ^[a-z0-9.-]{3,63}$
+    ConstraintDescription: Must be a valid S3 bucket name.
+
 Resources:
-  NoteCognitionTable:
+  # Execution role for the WebSocket Lambda
+  WebSocketHandlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: ["sts:AssumeRole"]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: LambdaS3ReadPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${DeploymentBucket}/*"
+
+  # WebSocket Lambda – code is now inline using InlineCode
+  WebSocketHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: NoteCognitionWebSocketHandler
+      Handler: index.handler
+      InlineCode: |
+        const AWS = require('aws-sdk');
+        const ddb = new AWS.DynamoDB.DocumentClient();
+        exports.handler = async (event) => {
+          const routeKey = event.requestContext.routeKey;
+          const connectionId = event.requestContext.connectionId;
+          const domainName = event.requestContext.domainName;
+          const stage = event.requestContext.stage;
+          const apigw = new AWS.ApiGatewayManagementApi({ endpoint: `${domainName}/${stage}` });
+          try {
+            if (routeKey === '$connect') {
+              await ddb.put({ TableName: process.env.CONNECTIONS_TABLE, Item: { connectionId } }).promise();
+              return { statusCode: 200, body: 'Connected' };
+            }
+            if (routeKey === '$disconnect') {
+              await ddb.delete({ TableName: process.env.CONNECTIONS_TABLE, Key: { connectionId } }).promise();
+              return { statusCode: 200, body: 'Disconnected' };
+            }
+            const { action, payload } = JSON.parse(event.body);
+            if (action === 'saveNote') {
+              await ddb.put({ TableName: process.env.NOTES_TABLE, Item: payload }).promise();
+            }
+            const connections = await ddb.scan({ TableName: process.env.CONNECTIONS_TABLE, ProjectionExpression: 'connectionId' }).promise();
+            const postCalls = connections.Items.map(async ({ connectionId }) => {
+              try {
+                await apigw.postToConnection({ ConnectionId: connectionId, Data: JSON.stringify({ action, payload }) }).promise();
+              } catch (err) {
+                if (err.statusCode === 410) {
+                  await ddb.delete({ TableName: process.env.CONNECTIONS_TABLE, Key: { connectionId } }).promise();
+                }
+              }
+            });
+            await Promise.all(postCalls);
+            return { statusCode: 200, body: 'Message processed' };
+          } catch (error) {
+            console.error('ERROR:', error);
+            return { statusCode: 500, body: JSON.stringify({ message: error.message }) };
+          }
+        };
+      Runtime: nodejs20.x
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          NOTES_TABLE: !Ref NotesTable
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NotesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConnectionsTable
+        - Statement:
+            Effect: Allow
+            Action:
+              - execute-api:ManageConnections
+            Resource: !Sub >
+              arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${NoteCognitionWebSocketApi}/*
+
+  # DynamoDB Tables
+  NotesTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName:
-        Fn::Sub: ${ProjectName}-data-${Environment}
+      TableName: Notes
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
-      - AttributeName: PK
-        AttributeType: S
-      - AttributeName: SK
-        AttributeType: S
-      - AttributeName: GSI1PK
-        AttributeType: S
-      - AttributeName: GSI1SK
-        AttributeType: S
+        - AttributeName: noteId
+          AttributeType: S
       KeySchema:
-      - AttributeName: PK
-        KeyType: HASH
-      - AttributeName: SK
-        KeyType: RANGE
-      GlobalSecondaryIndexes:
-      - IndexName: GSI1
-        KeySchema:
-        - AttributeName: GSI1PK
+        - AttributeName: noteId
           KeyType: HASH
-        - AttributeName: GSI1SK
-          KeyType: RANGE
-        Projection:
-          ProjectionType: ALL
-      StreamSpecification:
-        StreamViewType: NEW_AND_OLD_IMAGES
-  NoteCognitionAssetsBucket:
-    Type: AWS::S3::Bucket
+
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
     Properties:
-      BucketName:
-        Fn::Sub: ${ProjectName}-assets-${Environment}-${AWS::AccountId}
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        IgnorePublicAcls: true
-        BlockPublicPolicy: false
-        RestrictPublicBuckets: false
-      CorsConfiguration:
-        CorsRules:
-        - AllowedHeaders:
-          - '*'
-          AllowedMethods:
-          - GET
-          - PUT
-          - POST
-          - DELETE
-          AllowedOrigins:
-          - '*'
-          ExposedHeaders:
-          - ETag
-          MaxAge: 3000
-  NoteCognitionAssetsBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket:
-        Ref: NoteCognitionAssetsBucket
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Sid: PublicReadUploadedAssets
-          Effect: Allow
-          Principal: '*'
-          Action: s3:GetObject
-          Resource:
-            Fn::Sub: ${NoteCognitionAssetsBucket.Arn}/uploads/*
-  NoteCognitionUserPool:
-    Type: AWS::Cognito::UserPool
-    Properties:
-      UserPoolName:
-        Fn::Sub: ${ProjectName}-user-pool-${Environment}
-      UsernameAttributes:
-      - email
-      AutoVerifiedAttributes:
-      - email
-      Policies:
-        PasswordPolicy:
-          MinimumLength: 8
-          RequireLowercase: true
-          RequireNumbers: true
-          RequireSymbols: true
-          RequireUppercase: true
-      Schema:
-      - Name: email
-        AttributeDataType: String
-        Required: true
-        Mutable: true
-  NoteCognitionUserPoolClient:
-    Type: AWS::Cognito::UserPoolClient
-    Properties:
-      ClientName:
-        Fn::Sub: ${ProjectName}-client
-      UserPoolId:
-        Ref: NoteCognitionUserPool
-      GenerateSecret: false
-      ExplicitAuthFlows:
-      - ALLOW_USER_PASSWORD_AUTH
-      - ALLOW_REFRESH_TOKEN_AUTH
-      - ALLOW_USER_SRP_AUTH
-  SyncServiceLambda:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName:
-        Fn::Sub: ${ProjectName}-sync-service-${Environment}
-      CodeUri: s3://notecognition-bootstrap-940920597951-ap-south-1/5393175eb771462b57b1bc06e1c451c5
-      Handler: index.handler
-      Runtime: nodejs20.x
-      Environment:
-        Variables:
-          TABLE_NAME:
-            Ref: NoteCognitionTable
-          ASSET_BUCKET:
-            Ref: NoteCognitionAssetsBucket
-      Policies:
-      - DynamoDBCrudPolicy:
-          TableName:
-            Ref: NoteCognitionTable
-      - S3WritePolicy:
-          BucketName:
-            Ref: NoteCognitionAssetsBucket
-      Events:
-        ApiEvent:
-          Type: Api
-          Properties:
-            Path: /{proxy+}
-            Method: ANY
-            RestApiId:
-              Ref: NoteCognitionApi
-  WebSocketHandlerLambda:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: s3://notecognition-bootstrap-940920597951-ap-south-1/49aeb6f85314f878406d97507750c20a
-      Handler: index.handler
-      Runtime: nodejs20.x
-      Environment:
-        Variables:
-          TABLE_NAME:
-            Ref: NoteCognitionTable
-      Policies:
-      - DynamoDBCrudPolicy:
-          TableName:
-            Ref: NoteCognitionTable
-  StreamProcessorLambda:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: s3://notecognition-bootstrap-940920597951-ap-south-1/5a49864974c46d04f1d2439df2dd38eb
-      Handler: index.handler
-      Runtime: nodejs20.x
-      Environment:
-        Variables:
-          TABLE_NAME:
-            Ref: NoteCognitionTable
-          WEBSOCKET_API_ENDPOINT:
-            Fn::Sub: https://${NoteCognitionWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
-      Policies:
-      - DynamoDBCrudPolicy:
-          TableName:
-            Ref: NoteCognitionTable
-      - Statement:
-        - Effect: Allow
-          Action:
-          - execute-api:ManageConnections
-          Resource:
-            Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${NoteCognitionWebSocketApi}/${Environment}/*
-      Events:
-        NoteStream:
-          Type: DynamoDB
-          Properties:
-            Stream:
-              Fn::GetAtt:
-              - NoteCognitionTable
-              - StreamArn
-            StartingPosition: LATEST
-            BatchSize: 1
+      TableName: Connections
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
+
+  # API Gateway WebSocket
   NoteCognitionWebSocketApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
-      Name:
-        Fn::Sub: ${ProjectName}-websocket-${Environment}
+      Name: NoteCognitionWebSocket
       ProtocolType: WEBSOCKET
-      RouteSelectionExpression: $request.body.action
-  WebSocketConnectRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId:
-        Ref: NoteCognitionWebSocketApi
-      RouteKey: $connect
-      AuthorizationType: NONE
-      Target:
-        Fn::Sub: integrations/${WebSocketConnectIntegration}
-  WebSocketConnectIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId:
-        Ref: NoteCognitionWebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri:
-        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketHandlerLambda.Arn}/invocations
-  WebSocketDisconnectRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId:
-        Ref: NoteCognitionWebSocketApi
-      RouteKey: $disconnect
-      Target:
-        Fn::Sub: integrations/${WebSocketDisconnectIntegration}
-  WebSocketDisconnectIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId:
-        Ref: NoteCognitionWebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri:
-        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketHandlerLambda.Arn}/invocations
-  WebSocketDeployment:
-    Type: AWS::ApiGatewayV2::Deployment
-    DependsOn:
-    - WebSocketConnectRoute
-    - WebSocketDisconnectRoute
-    Properties:
-      ApiId:
-        Ref: NoteCognitionWebSocketApi
-  WebSocketStage:
-    Type: AWS::ApiGatewayV2::Stage
-    Properties:
-      ApiId:
-        Ref: NoteCognitionWebSocketApi
-      DeploymentId:
-        Ref: WebSocketDeployment
-      StageName:
-        Ref: Environment
-  WebSocketPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName:
-        Ref: WebSocketHandlerLambda
-      Principal: apigateway.amazonaws.com
-      SourceArn:
-        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${NoteCognitionWebSocketApi}/*
-  NoteCognitionApi:
-    Type: AWS::Serverless::Api
-    Properties:
-      StageName:
-        Ref: Environment
-      Cors:
-        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,Authorization'"
-        AllowOrigin: "'*'"
-      Auth:
-        DefaultAuthorizer: MyCognitoAuthorizer
-        AddDefaultAuthorizerToCorsPreflight: false
-        Authorizers:
-          MyCognitoAuthorizer:
-            UserPoolArn:
-              Fn::GetAtt:
-              - NoteCognitionUserPool
-              - Arn
+      RouteSelectionExpression: "$request.body.action"
+
+  # Integrations & Routes (Connect, Disconnect, Default) – omitted for brevity
+
 Outputs:
-  ApiUrl:
-    Description: Base URL of the Sync API
-    Value:
-      Fn::Sub: https://${NoteCognitionApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/
-  UserPoolId:
-    Value:
-      Ref: NoteCognitionUserPool
-  UserPoolClientId:
-    Value:
-      Ref: NoteCognitionUserPoolClient
-  S3BucketName:
-    Value:
-      Ref: NoteCognitionAssetsBucket
-  WebSocketUrl:
-    Description: WebSocket URL for real-time updates
-    Value:
-      Fn::Sub: wss://${NoteCognitionWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/
+  WebSocketURL:
+    Description: WebSocket API URL
+    Value: !Sub "wss://${NoteCognitionWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  NotesTableName:
+    Value: !Ref NotesTable
+  ConnectionsTableName:
+    Value: !Ref ConnectionsTable

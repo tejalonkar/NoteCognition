@@ -24,3 +24,4 @@ deploy.ps1
 destroy.ps1
 get-outputs.ps1
 cloudformation/transformed-template.yaml
+!public/cloudformation-template.yaml
