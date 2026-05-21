@@ -36,7 +36,7 @@ Resources:
                   - s3:GetObject
                 Resource: !Sub "arn:aws:s3:::${DeploymentBucket}/*"
 
-  # WebSocket Lambda – code is now inline using InlineCode
+  # WebSocket Lambda ? code is now inline using InlineCode
   WebSocketHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -133,7 +133,7 @@ Resources:
       ProtocolType: WEBSOCKET
       RouteSelectionExpression: "$request.body.action"
 
-  # Integrations & Routes (Connect, Disconnect, Default) – omitted for brevity
+  # Integrations & Routes (Connect, Disconnect, Default) ? omitted for brevity
 
 Outputs:
   WebSocketURL:

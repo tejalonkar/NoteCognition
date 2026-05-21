@@ -184,163 +184,86 @@ Resources:
   NoteCognitionWebSocketApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
-      Name: NoteCognitionWebSocket
-      ProtocolType: WEBSOCKET
-      RouteSelectionExpression: "$request.body.action"
+  # Execution role for the WebSocket Lambda
+  WebSocketHandlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: ["sts:AssumeRole"]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: LambdaS3ReadPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${DeploymentBucket}/*"
 
-  #########################################################
-  # Lambda Function
-  #########################################################
-
+  # WebSocket Lambda ? code is now inline using InlineCode
   WebSocketHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: NoteCognitionWebSocketHandler
-
       Handler: index.handler
-
       InlineCode: |
         const AWS = require('aws-sdk');
-
         const ddb = new AWS.DynamoDB.DocumentClient();
-
         exports.handler = async (event) => {
-
-          console.log("EVENT:", JSON.stringify(event));
-
           const routeKey = event.requestContext.routeKey;
-
           const connectionId = event.requestContext.connectionId;
-
           const domainName = event.requestContext.domainName;
-
           const stage = event.requestContext.stage;
-
-          const apigw = new AWS.ApiGatewayManagementApi({
-            endpoint: `${domainName}/${stage}`
-          });
-
+          const apigw = new AWS.ApiGatewayManagementApi({ endpoint: `${domainName}/${stage}` });
           try {
-
-            // CONNECT ROUTE
             if (routeKey === '$connect') {
-
-              await ddb.put({
-                TableName: process.env.CONNECTIONS_TABLE,
-                Item: {
-                  connectionId: connectionId
-                }
-              }).promise();
-
-              return {
-                statusCode: 200,
-                body: 'Connected'
-              };
+              await ddb.put({ TableName: process.env.CONNECTIONS_TABLE, Item: { connectionId } }).promise();
+              return { statusCode: 200, body: 'Connected' };
             }
-
-            // DISCONNECT ROUTE
             if (routeKey === '$disconnect') {
-
-              await ddb.delete({
-                TableName: process.env.CONNECTIONS_TABLE,
-                Key: {
-                  connectionId: connectionId
-                }
-              }).promise();
-
-              return {
-                statusCode: 200,
-                body: 'Disconnected'
-              };
+              await ddb.delete({ TableName: process.env.CONNECTIONS_TABLE, Key: { connectionId } }).promise();
+              return { statusCode: 200, body: 'Disconnected' };
             }
-
-            // DEFAULT MESSAGE ROUTE
-            const body = JSON.parse(event.body);
-
-            const action = body.action;
-
-            const payload = body.payload;
-
-            // Save note to DynamoDB
+            const { action, payload } = JSON.parse(event.body);
             if (action === 'saveNote') {
-
-              await ddb.put({
-                TableName: process.env.NOTES_TABLE,
-                Item: payload
-              }).promise();
+              await ddb.put({ TableName: process.env.NOTES_TABLE, Item: payload }).promise();
             }
-
-            // Get all active connections
-            const connections = await ddb.scan({
-              TableName: process.env.CONNECTIONS_TABLE,
-              ProjectionExpression: 'connectionId'
-            }).promise();
-
-            // Broadcast message
+            const connections = await ddb.scan({ TableName: process.env.CONNECTIONS_TABLE, ProjectionExpression: 'connectionId' }).promise();
             const postCalls = connections.Items.map(async ({ connectionId }) => {
-
               try {
-
-                await apigw.postToConnection({
-                  ConnectionId: connectionId,
-                  Data: JSON.stringify({
-                    action,
-                    payload
-                  })
-                }).promise();
-
+                await apigw.postToConnection({ ConnectionId: connectionId, Data: JSON.stringify({ action, payload }) }).promise();
               } catch (err) {
-
-                console.log("Connection error:", err);
-
-                // Remove stale connections
                 if (err.statusCode === 410) {
-
-                  await ddb.delete({
-                    TableName: process.env.CONNECTIONS_TABLE,
-                    Key: {
-                      connectionId
-                    }
-                  }).promise();
+                  await ddb.delete({ TableName: process.env.CONNECTIONS_TABLE, Key: { connectionId } }).promise();
                 }
               }
             });
-
             await Promise.all(postCalls);
-
-            return {
-              statusCode: 200,
-              body: 'Message processed'
-            };
-
+            return { statusCode: 200, body: 'Message processed' };
           } catch (error) {
-
-            console.error("ERROR:", error);
-
-            return {
-              statusCode: 500,
-              body: JSON.stringify({
-                message: error.message
-              })
-            };
+            console.error('ERROR:', error);
+            return { statusCode: 500, body: JSON.stringify({ message: error.message }) };
           }
         };
-
+      Runtime: nodejs20.x
+      Timeout: 30
+      MemorySize: 256
       Environment:
         Variables:
           NOTES_TABLE: !Ref NotesTable
           CONNECTIONS_TABLE: !Ref ConnectionsTable
-
       Policies:
-
-        # DynamoDB permissions
         - DynamoDBCrudPolicy:
             TableName: !Ref NotesTable
-
         - DynamoDBCrudPolicy:
             TableName: !Ref ConnectionsTable
-
-        # WebSocket management permissions
         - Statement:
             Effect: Allow
             Action:
@@ -348,21 +271,6 @@ Resources:
             Resource: !Sub >
               arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${NoteCognitionWebSocketApi}/*
 
-  #########################################################
-  # Lambda Integrations
-  #########################################################
-
-  ConnectIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId: !Ref NoteCognitionWebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
-
-  DisconnectIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId: !Ref NoteCognitionWebSocketApi
       IntegrationType: AWS_PROXY
       IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
 
